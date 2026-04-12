@@ -1,0 +1,28 @@
+#!/bin/bash
+# .githooks/pre-commit — FIX DB-1d
+# Prevents session-scoped pg_advisory_lock which is silently broken on PgBouncer transaction mode.
+# Only pg_advisory_xact_lock is safe with PgBouncer.
+
+echo "Checking for unsafe pg_advisory_lock usage..."
+
+if grep -rn --include="*.sql" --include="*.js" "pg_advisory_lock(" . \
+   | grep -v "pg_advisory_xact_lock" \
+   | grep -v "pg_advisory_unlock" \
+   | grep -v "node_modules" \
+   | grep -v ".githooks" \
+   | grep -q "pg_advisory_lock("; then
+  echo ""
+  echo "ERROR: pg_advisory_lock() is UNSAFE with PgBouncer transaction mode."
+  echo "Use pg_advisory_xact_lock() instead."
+  echo ""
+  echo "Violations:"
+  grep -rn --include="*.sql" --include="*.js" "pg_advisory_lock(" . \
+    | grep -v "pg_advisory_xact_lock" \
+    | grep -v "pg_advisory_unlock" \
+    | grep -v "node_modules" \
+    | grep -v ".githooks"
+  echo ""
+  exit 1
+fi
+
+echo "✅ No unsafe advisory lock usage found."

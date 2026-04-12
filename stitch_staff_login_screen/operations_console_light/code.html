@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Kinetic Engine | Operations Console</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-dim": "#101419",
+            "surface-container-highest": "#31353b",
+            "on-tertiary": "#472a00",
+            "surface-variant": "#31353b",
+            "inverse-on-surface": "#2d3136",
+            "surface-bright": "#36393f",
+            "error-container": "#93000a",
+            "outline": "#86948a",
+            "secondary-container": "#3131c0",
+            "on-primary": "#003824",
+            "background": "#F8FAFC",
+            "tertiary-fixed-dim": "#ffb95f",
+            "on-tertiary-fixed-variant": "#653e00",
+            "on-surface": "#1E293B",
+            "on-surface-variant": "#1E293B",
+            "on-secondary-fixed-variant": "#2f2ebe",
+            "inverse-primary": "#006c49",
+            "surface-tint": "#4edea3",
+            "on-tertiary-fixed": "#2a1700",
+            "surface": "#ffffff",
+            "on-primary-fixed": "#002113",
+            "on-primary-fixed-variant": "#005236",
+            "secondary-fixed": "#e1e0ff",
+            "on-tertiary-container": "#523200",
+            "tertiary": "#ffb95f",
+            "on-error-container": "#ffdad6",
+            "error": "#EF4444",
+            "on-primary-container": "#00422b",
+            "secondary-fixed-dim": "#c0c1ff",
+            "on-secondary-fixed": "#07006c",
+            "outline-variant": "#E2E8F0",
+            "primary": "#4EDE63",
+            "surface-container-high": "#ffffff",
+            "surface-container-low": "#F8FAFC",
+            "on-error": "#ffffff",
+            "primary-fixed": "#6ffbbe",
+            "on-secondary": "#ffffff",
+            "primary-container": "#10b981",
+            "on-secondary-container": "#b0b2ff",
+            "inverse-surface": "#e0e2ea",
+            "on-background": "#1E293B",
+            "tertiary-container": "#e29100",
+            "surface-container": "#F1F5F9",
+            "surface-container-lowest": "#ffffff",
+            "tertiary-fixed": "#ffddb8",
+            "secondary": "#6366F1",
+            "primary-fixed-dim": "#4edea3"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "fontFamily": {
+            "headline": ["Inter"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["JetBrains Mono", "monospace"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .pulsing-dot {
+      box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
+  </style>
+</head>
+<body class="bg-[#F8FAFC] text-[#1E293B] font-body min-h-screen flex">
+<!-- SideNavBar Anchor -->
+<aside class="hidden lg:flex flex-col h-screen w-64 p-4 gap-2 bg-slate-50 border-r border-[#E2E8F0]">
+<div class="mb-8 px-2">
+<h1 class="text-2xl font-black text-secondary">Kinetic</h1>
+<div class="flex items-center gap-2 mt-4">
+<img alt="System Operator Profile" class="w-10 h-10 rounded-full bg-slate-200" data-alt="close up of a professional male kitchen manager in a clean white uniform smiling in a brightly lit modern office environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCqR90uG2B6bXHG_Nix_aR4FPyeeXlm8ml3fyG7Ng8HVuJfT8iuSWefamniPB3AbP3si8ptVCKhJRXCO9B23k0vz1yW5q3eUrAINUAEwF-p2lGiZhGmfruCglS0TgkS1nnq89oKxbu7-iYfFzHBtahrw0GaqFfw_WDGUp2UfC5zEY8LqUPLK-dZEsCn8zvrWXIQg83Itk2DYfljVJeP_HfQjOoxWHDqVSJUJhJyElYSLsbfrur3g_FpF9yhNLxe2MMnBhIuYDWp92tg"/>
+<div>
+<p class="text-sm font-bold leading-none text-[#1E293B]">Operations</p>
+<p class="text-[10px] uppercase tracking-widest text-[#1E293B] font-bold mt-1">Terminal 01</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-[#1E293B] hover:bg-indigo-50 transition-all duration-200 rounded-lg font-semibold" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-sm">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 bg-white text-secondary rounded-lg shadow-sm font-bold transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="soup_kitchen">soup_kitchen</span>
+<span class="text-sm">Kitchen</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#1E293B] hover:bg-indigo-50 transition-all duration-200 rounded-lg font-semibold" href="#">
+<span class="material-symbols-outlined" data-icon="point_of_sale">point_of_sale</span>
+<span class="text-sm">POS</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#1E293B] hover:bg-indigo-50 transition-all duration-200 rounded-lg font-semibold" href="#">
+<span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+<span class="text-sm">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#1E293B] hover:bg-indigo-50 transition-all duration-200 rounded-lg font-semibold" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span class="text-sm">Staff</span>
+</a>
+</nav>
+<button class="mt-auto bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+      New Order
+    </button>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col min-w-0">
+<!-- TopNavBar Anchor -->
+<header class="bg-white border-b border-[#E2E8F0] h-[64px] px-6 flex justify-between items-center sticky top-0 z-50">
+<div class="flex items-center gap-4">
+<h2 class="text-[22px] font-bold text-[#1E293B]">Operations Console</h2>
+<div class="flex items-center gap-2 px-3 py-1 bg-green-50 rounded-full border border-green-100">
+<div class="w-2 h-2 rounded-full bg-[#16A34A] pulsing-dot"></div>
+<span class="text-[13px] font-bold text-[#16A34A]">Live Sync</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<nav class="flex bg-slate-100 p-1 rounded-full">
+<button class="px-6 py-1.5 rounded-full text-sm font-bold bg-[#1E293B] text-white shadow-sm">Live Orders</button>
+<button class="px-6 py-1.5 rounded-full text-sm font-bold text-[#1E293B] hover:bg-slate-200 transition-colors">Menu &amp; 86 List</button>
+</nav>
+<div class="h-6 w-[1px] bg-[#E2E8F0] mx-2"></div>
+<div class="flex items-center gap-3">
+<button class="p-2 text-[#1E293B] hover:bg-slate-50 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-[#1E293B] hover:bg-slate-50 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Console Body -->
+<div class="p-6 overflow-y-auto">
+<!-- Live Orders Section -->
+<section class="space-y-3">
+<div class="flex items-center justify-between mb-6">
+<div>
+<h3 class="text-sm font-black text-[#1E293B] uppercase tracking-widest">Active Tickets (12)</h3>
+</div>
+<div class="flex gap-2">
+<span class="text-xs font-mono font-bold bg-slate-100 px-2 py-1 rounded text-[#1E293B]">Avg Prep: 14m</span>
+<span class="text-xs font-mono font-bold bg-slate-100 px-2 py-1 rounded text-[#1E293B]">Peak Flow: 82%</span>
+</div>
+</div>
+<!-- Order Card 1 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-[14px_16px] flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<span class="font-mono font-bold text-secondary">#ORD-9F2B</span>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-amber-100 text-amber-700">Preparing</span>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-purple-100 text-purple-700">WhatsApp</span>
+<span class="text-sm text-[#1E293B] font-bold">+91 98765 43210</span>
+</div>
+<p class="text-sm text-[#1E293B] font-medium truncate max-w-xl">
+              2x Truffle Mushroom Risotto, 1x Classic Margherita (No Onions), 3x Fresh Lime Soda
+            </p>
+</div>
+<div class="flex items-center gap-6">
+<div class="text-right">
+<p class="text-lg font-black text-[#1E293B]">₹850</p>
+<button class="text-xs font-black text-error hover:underline">Refund</button>
+</div>
+<div class="w-[160px]">
+<select class="w-full bg-slate-50 border-[#E2E8F0] rounded-lg text-sm font-bold text-[#1E293B] focus:ring-2 focus:ring-secondary/20 h-10 px-3">
+<option>Mark Ready</option>
+<option>Out for Delivery</option>
+<option>Completed</option>
+<option class="text-error">Cancel Order</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Order Card 2 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-[14px_16px] flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<span class="font-mono font-bold text-secondary">#ORD-3A1C</span>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-blue-100 text-blue-700">Received</span>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700">POS</span>
+<span class="text-sm text-[#1E293B] font-bold">Table 04 (Dine-in)</span>
+</div>
+<p class="text-sm text-[#1E293B] font-medium truncate max-w-xl">
+              1x Signature BBQ Pork Ribs (Half Rack), 1x Loaded Potato Skins, 1x Pilsner Draught
+            </p>
+</div>
+<div class="flex items-center gap-6">
+<div class="text-right">
+<p class="text-lg font-black text-[#1E293B]">₹1,420</p>
+<button class="text-xs font-black text-error hover:underline">Refund</button>
+</div>
+<div class="w-[160px]">
+<select class="w-full bg-slate-50 border-[#E2E8F0] rounded-lg text-sm font-bold text-[#1E293B] focus:ring-2 focus:ring-secondary/20 h-10 px-3">
+<option>Start Preparing</option>
+<option>Mark Ready</option>
+<option class="text-error">Cancel Order</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Order Card 3 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-[14px_16px] flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<span class="font-mono font-bold text-secondary">#ORD-8E77</span>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-green-100 text-green-700">Ready</span>
+<span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-purple-100 text-purple-700">WhatsApp</span>
+<span class="text-sm text-[#1E293B] font-bold">+91 99001 22334</span>
+</div>
+<p class="text-sm text-[#1E293B] font-medium truncate max-w-xl">
+              4x Crispy Chicken Tacos, 2x Churros with Dulce de Leche
+            </p>
+</div>
+<div class="flex items-center gap-6">
+<div class="text-right">
+<p class="text-lg font-black text-[#1E293B]">₹610</p>
+<button class="text-xs font-black text-error hover:underline">Refund</button>
+</div>
+<div class="w-[160px]">
+<select class="w-full bg-slate-50 border-[#E2E8F0] rounded-lg text-sm font-bold text-[#1E293B] focus:ring-2 focus:ring-secondary/20 h-10 px-3">
+<option>Handed Over</option>
+<option>Out for Delivery</option>
+<option>Completed</option>
+</select>
+</div>
+</div>
+</div>
+</section>
+<!-- Menu Management Grid -->
+<section class="mt-12">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-sm font-black text-[#1E293B] uppercase tracking-widest">Menu Control &amp; 86 List</h3>
+<div class="flex gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-[#1E293B] text-sm" data-icon="search">search</span>
+<input class="pl-9 pr-4 py-2 bg-white border border-[#E2E8F0] rounded-full text-xs w-64 font-bold text-[#1E293B] focus:ring-2 focus:ring-secondary/20" placeholder="Search menu items..." type="text"/>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Item Card 1 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-4 flex flex-col hover:border-secondary/30 transition-colors shadow-sm">
+<div class="flex gap-4 mb-4">
+<img alt="Double Bacon Cheese Burger" class="w-16 h-16 rounded-xl object-cover bg-slate-50" data-alt="Close up studio shot of a gourmet double bacon cheeseburger with melting cheddar and fresh lettuce on a dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBFsCZ5_4YXnfKuCyvBFMt0-nbzscakY8hPPAfWOC3n_bxgAvPC1PBYYUWWWSNkYRxy-dv7XEAvnenTBHdGB6-zNMGDbylQUsITLzovvPUb4-Klmp_Htt2EUuJ2O8la8Ulnc5sxBj0X3WcWLWuCgHbkXB2DWJ8veOnmt54MhhLV-IW55J4CYpZC_OqyM3IJFKl1yoGzSMQp2PvaGHRbZcK8UGtzoLIMmSy1PSTzusnBriDHYjgz5nBOxwux5mExJrLzq7xC3PzZ0Nxx"/>
+<div class="flex-1">
+<p class="text-[15px] font-black text-[#1E293B]">Double Bacon Cheese Burger</p>
+<p class="text-[12px] text-[#1E293B] font-bold">Mains • Beef</p>
+<p class="text-sm font-black mt-1 text-secondary">₹420</p>
+</div>
+</div>
+<button class="w-full py-2.5 bg-green-50 text-[#16A34A] text-xs font-black rounded-lg border border-green-100 hover:bg-green-100 transition-colors uppercase tracking-widest">Mark Sold Out</button>
+</div>
+<!-- Item Card 2 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-4 flex flex-col border-dashed opacity-80 shadow-sm">
+<div class="flex gap-4 mb-4">
+<img alt="Quinoa Power Bowl" class="w-16 h-16 rounded-xl object-cover bg-slate-50 grayscale" data-alt="Vibrant healthy quinoa power bowl with roasted vegetables and fresh avocado on a minimalist light gray ceramic plate" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDoJIjqeXU3OhMoPkUPDbglQ_VR9GEzTnhpIBFQeI3fqLznYbg2KCOPZtHhQaxL1sKoD0Py6vyvDLMTlZ6MMcp6R-T4nDgJ8IZCydF2M5qtrUh-ROf5KqalJGjdmXNuR_854kEaNBQ1dp3nd5EvFvw2RL1H8xEDpXEKbcqF1kP44UOo-UuR20-Q0U95wBh6fSHuTv4AoYPNhUfC8GE76Hr197lGBO_cqc2KlHrVWxG_Vis7y1uOcDw45i7hz-3sG0FPVDkSOkco-I1Q"/>
+<div class="flex-1">
+<p class="text-[15px] font-black text-[#1E293B]">Quinoa Power Bowl</p>
+<p class="text-[12px] text-[#1E293B] font-bold">Sides • Vegan</p>
+<p class="text-sm font-black mt-1 text-secondary">₹340</p>
+</div>
+</div>
+<button class="w-full py-2.5 bg-error/10 text-error text-xs font-black rounded-lg border border-error/20 hover:bg-error/20 transition-colors uppercase tracking-widest">Mark Available</button>
+</div>
+<!-- Item Card 3 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-4 flex flex-col hover:border-secondary/30 transition-colors shadow-sm">
+<div class="flex gap-4 mb-4">
+<img alt="Penne Arrabbiata" class="w-16 h-16 rounded-xl object-cover bg-slate-50" data-alt="Top down view of spicy penne arrabbiata pasta with rich tomato sauce and fresh basil in a rustic white bowl" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDdINj6UEd3xiatZl4QQefE4Djzzk_t_drDynbOB3F8iDd55bxQDAcCNHV2gqPQX4qC1B1pJoiuhQBOJvx592ShUONmIV-s34-sZ2pL-b4ScvdQTOmRyNZIrdl4ahS2B_dsLx9wU93tOf9qMZEpJqZkWrA7A7a0lPMgO_dkdvw7i_iZ0FuszomwSGdjh3tPJlmB_uqJHm5TazEYeCSvT5vXSy0_MMsRe8pVtK8bb2KsJh6fAeMtpvL1QPMJnjlSCxAvtWrduZgnUiuu"/>
+<div class="flex-1">
+<p class="text-[15px] font-black text-[#1E293B]">Penne Arrabbiata</p>
+<p class="text-[12px] text-[#1E293B] font-bold">Mains • Pasta</p>
+<p class="text-sm font-black mt-1 text-secondary">₹380</p>
+</div>
+</div>
+<button class="w-full py-2.5 bg-green-50 text-[#16A34A] text-xs font-black rounded-lg border border-green-100 hover:bg-green-100 transition-colors uppercase tracking-widest">Mark Sold Out</button>
+</div>
+<!-- Item Card 4 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-4 flex flex-col hover:border-secondary/30 transition-colors shadow-sm">
+<div class="flex gap-4 mb-4">
+<img alt="Margherita Pizza" class="w-16 h-16 rounded-xl object-cover bg-slate-50" data-alt="Classic wood-fired margherita pizza with bubbling mozzarella and fresh basil leaves on a flour-dusted wooden board" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD_5uvpMtANc8OkbPS73UDvQg7pdiDZP1xnCnG9xmMbh6Y_cR80oksLQW-_OZHyfVejbHbC8KMryU3XjqJP-oH_2vJgJrfPiyC-R0-syXguE9vH4UYVOMDCmAGy3cz3RR3pZylROBRtwnJKTQ0uQY9LFAV6qd7bWX22T3vPErkQWjsVldE-2Yq0PWwWb-Bk0ijTXPWzt-FjuqMfz_BbzKSQNBKsg4jpXHhLkIEuN36HpCYKRellbqlirMLRj48EfgX2-qIZdvxu-usy"/>
+<div class="flex-1">
+<p class="text-[15px] font-black text-[#1E293B]">Classic Margherita</p>
+<p class="text-[12px] text-[#1E293B] font-bold">Mains • Pizza</p>
+<p class="text-sm font-black mt-1 text-secondary">₹550</p>
+</div>
+</div>
+<button class="w-full py-2.5 bg-green-50 text-[#16A34A] text-xs font-black rounded-lg border border-green-100 hover:bg-green-100 transition-colors uppercase tracking-widest">Mark Sold Out</button>
+</div>
+<!-- Item Card 5 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-4 flex flex-col hover:border-secondary/30 transition-colors shadow-sm">
+<div class="flex gap-4 mb-4">
+<img alt="Tiramisu" class="w-16 h-16 rounded-xl object-cover bg-slate-50" data-alt="Elegant slice of traditional tiramisu dusted with cocoa powder and garnished with fresh mint on a polished dark plate" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAnP00E3esZmQY9DpzHfTBcbpr4k4wY_LCvqVszLMoRBlfk5FCwIrjTOPaEJslcme3RM5v3k-oJK8soeBl0vh-AEO0NC6vIFoZwCV-SUQ27Ngt4zn6qbQXjOeoflC9-efmTsAbZDQWhicf8iqfbmbhn2FST_8x4LxiJu3XWHtxHjR1vWyakYC1f-PlJWnAZLEwbQ6YTljKcAZ_k65DBEM8M2OIiQ1cswl-G3pLPPznzffkUPWD7UGdNFnMSWyygoPkJ-UG9yTALhDAy"/>
+<div class="flex-1">
+<p class="text-[15px] font-black text-[#1E293B]">Home-style Tiramisu</p>
+<p class="text-[12px] text-[#1E293B] font-bold">Desserts • Italian</p>
+<p class="text-sm font-black mt-1 text-secondary">₹290</p>
+</div>
+</div>
+<button class="w-full py-2.5 bg-green-50 text-[#16A34A] text-xs font-black rounded-lg border border-green-100 hover:bg-green-100 transition-colors uppercase tracking-widest">Mark Sold Out</button>
+</div>
+<!-- Item Card 6 -->
+<div class="bg-white border border-[#E2E8F0] rounded-[14px] p-4 flex flex-col hover:border-secondary/30 transition-colors shadow-sm">
+<div class="flex gap-4 mb-4">
+<img alt="Fresh Lime Soda" class="w-16 h-16 rounded-xl object-cover bg-slate-50" data-alt="Refreshing glass of sparkling lime soda with mint leaves and lime wedges with condensation on the glass" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDXi0DgvW4ENoVFz4-T-nYXCwWjw14pXOGOilBxiNsk47HV78NKlZqxoQJKAJ_8SNcoLGodz4AaUAJ2DUTOdQOxPtnT-Ju6XeJhcqlyCCsmIBc3tYszWXtQvxmkOBNm5fZLKp3jPpb_a9adL37Nourupv3Wp8yxOFUx6GAeuHngOwq-iat0qv8x9CyG8PAPzu5GqZAQJhEXrNCn2hjqub0mI9EC1wEk9_Qk4-hlGriQBMoK41u1h9UK0L244vqc4GJVlUHYMCvte6P3"/>
+<div class="flex-1">
+<p class="text-[15px] font-black text-[#1E293B]">Fresh Lime Soda</p>
+<p class="text-[12px] text-[#1E293B] font-bold">Beverages • Cold</p>
+<p class="text-sm font-black mt-1 text-secondary">₹180</p>
+</div>
+</div>
+<button class="w-full py-2.5 bg-green-50 text-[#16A34A] text-xs font-black rounded-lg border border-green-100 hover:bg-green-100 transition-colors uppercase tracking-widest">Mark Sold Out</button>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Floating Action Button for Mobile -->
+<div class="md:hidden fixed bottom-6 right-6">
+<button class="bg-primary text-on-primary w-14 h-14 rounded-full shadow-2xl flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+</body></html>

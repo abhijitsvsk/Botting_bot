@@ -1,0 +1,478 @@
+{
+  "name": "WhatsApp Restaurant Bot Pro",
+  "nodes": [
+    {
+      "id": "webhook_inbound",
+      "name": "📲 WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [200, 400],
+      "parameters": {
+        "path": "whatsapp-webhook",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "notes": "Receives incoming WhatsApp messages from Meta's webhook"
+    },
+    {
+      "id": "extract_message",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [400, 400],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "from",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "raw_text",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "button_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "message_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "timestamp",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.timestamp || '' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "notes": "Extracts phone number, message text, and button interactions"
+    },
+    {
+      "id": "normalize_input",
+      "name": "🔄 Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 400],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Normalize text input for robust parsing\nconst raw = ($input.item.json.raw_text || '').toUpperCase();\nconst clean = raw.replace(/[^A-Z0-9\\s]/g, ' ').replace(/\\s+/g, ' ').trim();\nconst interactive = $input.item.json.button_id || '';\n\nreturn {\n  ...($input.item.json),\n  text: clean,\n  action: interactive.toUpperCase()\n};"
+      },
+      "notes": "Cleans and normalizes user input for consistent processing"
+    },
+    {
+      "id": "load_session",
+      "name": "💾 Session Manager",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 400],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Session management with 15-minute timeout\nconst data = this.getWorkflowStaticData('global');\nconst phone = $input.item.json.from;\nconst now = Date.now();\n\n// Initialize sessions object\nif (!data.sessions) data.sessions = {};\n\n// Create or retrieve session\nif (!data.sessions[phone]) {\n  data.sessions[phone] = {\n    table: null,\n    cart: [],\n    last_seen: now,\n    created_at: now\n  };\n}\n\nconst session = data.sessions[phone];\n\n// Check for session expiry (15 minutes)\nconst SESSION_TIMEOUT = 900000; // 15 minutes\nconst expired = (now - session.last_seen) > SESSION_TIMEOUT;\n\nif (expired) {\n  session.table = null;\n  session.cart = [];\n  session.created_at = now;\n}\n\nsession.last_seen = now;\n\nreturn {\n  ...($input.item.json),\n  session: session,\n  session_expired: expired\n};"
+      },
+      "notes": "Manages user sessions with 15-minute auto-expiry"
+    },
+    {
+      "id": "check_table_set",
+      "name": "Table Assigned?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 400],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.session.table }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "isEmpty" }
+            }
+          ]
+        }
+      },
+      "notes": "Checks if user has set their table number"
+    },
+    {
+      "id": "ask_table_number",
+      "name": "📍 Request Table Number",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 250],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"🍽️ *Welcome to {{$vars.RESTAURANT_NAME}}!*\\n\\n📍 Please enter your table number (1-200)\\n\\n*Example:* 5 or Table 12\"\n  }\n}"
+      },
+      "notes": "Sends welcome message requesting table number"
+    },
+    {
+      "id": "parse_table_number",
+      "name": "🔢 Parse Table Number",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 550],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Parse table number from user input\nconst text = $input.item.json.text.trim();\nconst match = text.match(/\\b(?:T|TABLE)?\\s*(\\d+)\\b/i);\n\nif (!match) {\n  return {\n    ...$input.item.json,\n    error: 'INVALID_TABLE',\n    error_msg: '❌ Invalid table number format.\\n\\nPlease send just the number (e.g., \"5\" or \"table 12\")'\n  };\n}\n\nconst tableNum = parseInt(match[1]);\nconst MAX_TABLES = 200;\n\nif (tableNum < 1 || tableNum > MAX_TABLES) {\n  return {\n    ...$input.item.json,\n    error: 'TABLE_OUT_RANGE',\n    error_msg: `❌ Table number must be between 1 and ${MAX_TABLES}`\n  };\n}\n\n// Save table to session\nconst data = this.getWorkflowStaticData('global');\ndata.sessions[$input.item.json.from].table = tableNum.toString();\n\nreturn {\n  ...$input.item.json,\n  session: data.sessions[$input.item.json.from]\n};"
+      },
+      "notes": "Validates and stores table number in session"
+    },
+    {
+      "id": "check_table_error",
+      "name": "Valid Table?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 550],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "send_error_message",
+      "name": "⚠️ Send Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 450],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{$json.error_msg}}\"\n  }\n}"
+      },
+      "notes": "Sends user-friendly error messages"
+    },
+    {
+      "id": "show_main_menu",
+      "name": "🎯 Main Menu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 650],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"✅ *Table {{$json.session.table}} Confirmed!*\\n\\n📋 View menu, then send item codes:\\n*Example:* B1 2 F3 1\\n\\n🛒 Cart items: {{$json.session.cart.length}}\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"menu\",\n            \"title\": \"📋 View Menu\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"cart\",\n            \"title\": \"🛒 My Cart\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"help\",\n            \"title\": \"❓ Help\"\n          }\n        }\n      ]\n    }\n  }\n}"
+      },
+      "notes": "Shows main menu with interactive buttons"
+    },
+    {
+      "id": "route_action",
+      "name": "🔀 Action Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1800, 650],
+      "parameters": {
+        "mode": "expression",
+        "output": "input",
+        "rules": {
+          "rules": [
+            {
+              "id": "r1",
+              "outputKey": "menu",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action || $json.text }}",
+                    "rightValue": "MENU",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "r2",
+              "outputKey": "cart",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action || $json.text }}",
+                    "rightValue": "CART",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "r3",
+              "outputKey": "confirm",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action || $json.text }}",
+                    "rightValue": "CONFIRM",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "r4",
+              "outputKey": "clear",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action || $json.text }}",
+                    "rightValue": "CLEAR",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "r5",
+              "outputKey": "help",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action || $json.text }}",
+                    "rightValue": "HELP",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "r6",
+              "outputKey": "items",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.text }}",
+                    "rightValue": "^[A-Z]+\\d+",
+                    "operator": { "type": "string", "operation": "regex" }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "notes": "Routes user actions to appropriate handlers"
+    },
+    {
+      "id": "send_menu_pdf",
+      "name": "📋 Send Menu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"link\": \"{{$vars.MENU_PDF_URL}}\",\n    \"caption\": \"📋 *{{$vars.RESTAURANT_NAME}} Menu*\\n\\n*Categories:*\\nB = Beverages\\nF = Food\\nD = Desserts\\n\\n*How to order:*\\nSend item codes with quantities\\nExample: B1 2 F3 1\\n(2x B1 and 1x F3)\"\n  }\n}"
+      },
+      "notes": "Sends PDF menu with ordering instructions"
+    },
+    {
+      "id": "send_help",
+      "name": "❓ Send Help",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 450],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"❓ *How to Use*\\n\\n*1️⃣ View Menu*\\nTap 'View Menu' button\\n\\n*2️⃣ Add Items*\\nSend item codes with quantities\\nExample: B1 2 F3 1\\n(Orders 2x B1 and 1x F3)\\n\\n*3️⃣ Check Cart*\\nTap 'My Cart' to review\\n\\n*4️⃣ Confirm Order*\\nTap 'Confirm' in cart\\n\\n*Need help?* Contact staff at your table.\"\n  }\n}"
+      },
+      "notes": "Provides detailed usage instructions"
+    },
+    {
+      "id": "format_cart",
+      "name": "🛒 Format Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 600],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Format cart for display\nconst session = $input.item.json.session;\n\nif (!session.cart || session.cart.length === 0) {\n  return {\n    ...$input.item.json,\n    cart_empty: true,\n    cart_text: '🛒 *Your cart is empty*\\n\\nTap \"View Menu\" to start ordering!'\n  };\n}\n\n// Format cart items\nconst lines = session.cart.map(item => \n  `${item.qty}x ${item.name}\\n   ₹${item.price.toFixed(2)} × ${item.qty} = ₹${(item.price * item.qty).toFixed(2)}`\n);\n\nconst total = session.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);\nconst itemCount = session.cart.reduce((sum, item) => sum + item.qty, 0);\n\nconst cartText = `🛒 *Your Cart (Table ${session.table})*\\n\\n${lines.join('\\n\\n')}\\n\\n${'━'.repeat(30)}\\n*Total Items:* ${itemCount}\\n*Total Amount:* ₹${total.toFixed(2)}`;\n\nreturn {\n  ...$input.item.json,\n  cart_empty: false,\n  cart_text: cartText,\n  cart_total: total,\n  cart_item_count: itemCount\n};"
+      },
+      "notes": "Formats cart contents with pricing"
+    },
+    {
+      "id": "check_cart_empty",
+      "name": "Cart Empty?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2200, 600],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.cart_empty }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "send_empty_cart",
+      "name": "📭 Empty Cart Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2400, 500],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"{{$json.cart_text}}\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"menu\",\n            \"title\": \"📋 View Menu\"\n          }\n        }\n      ]\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "send_cart_with_actions",
+      "name": "🛒 Send Cart",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2400, 700],
+      "parameters": {
+        "url": "https://graph.facebook.com/v19.0/{{$vars.WHATSAPP_PHONE_ID}}/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{$vars.WHATSAPP_ACCESS_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$json.from}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"{{$json.cart_text}}\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"confirm\",\n            \"title\": \"✅ Confirm Order\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"clear\",\n            \"title\": \"🗑️ Clear Cart\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"menu\",\n            \"title\": \"➕ Add More\"\n          }\n        }\n      ]\n    }\n  }\n}"
+      },
+      "notes": "Displays cart with action buttons"
+    },
+    {
+      "id": "parse_item_codes",
+      "name": "🔍 Parse Item Codes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 900],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Parse item codes and quantities from user input\nconst tokens = $input.item.json.text.split(/\\s+/);\nconst items = [];\n\nfor (let i = 0; i < tokens.length; i++) {\n  // Match item code pattern (e.g., B1, F12, D3)\n  if (/^[A-Z]+\\d+$/.test(tokens[i])) {\n    let qty = 1;\n    \n    // Check if next token is a quantity\n    if (i + 1 < tokens.length && /^\\d+$/.test(tokens[i + 1])) {\n      qty = parseInt(tokens[i + 1]);\n      i++; // Skip the quantity token\n    }\n    \n    // Validate quantity\n    if (qty < 1 || qty > 20) {\n      return {\n        ...$input.item.json,\n        error: 'INVALID_QTY',\n        error_msg: '❌ Quantity must be between 1 and 20 per item.\\n\\nPlease try again.'\n      };\n    }\n    \n    items.push({ code: tokens[i], qty });\n  }\n}\n\nif (items.length === 0) {\n  return {\n    ...$input.item.json,\n    error: 'NO_ITEMS',\n    error_msg: '❌ No valid item codes found.\\n\\n*Format:* B1 2 F3 1\\n(This orders 2x B1 and 1x F3)\\n\\nTap \"View Menu\" to see all codes.'\n  };\n}\n\nreturn {\n  ...$input.item.json,\n  parsed_items: items\n};"
+      },
+      "notes": "Parses and validates item codes with quantities"
+    },
+    {
+      "id": "check_parse_error",
+      "name": "Valid Format?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2200, 900],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lookup_items_sheet",
+      "name": "📊 Lookup Menu Items",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [2400, 1000],
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "{{$vars.GOOGLE_SHEET_ID}}" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "menu" },
+        "filtersUI": { "values": [] },
+        "combineFilters": "AND"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets Account"
+        }
+      },
+      "notes": "Fetches menu items from Google Sheets"
+    },
+    {
+      "id": "validate_and_add_to_cart",
+      "name": "➕ Add to Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2600, 1000],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Validate items against menu and add to cart\nconst menuItems = $input.all().slice(1).map(i => i.json);\nconst currentData = $input.item.json;\nconst parsedItems = currentData.parsed_items;\nconst data = this.getWorkflowStaticData('global');\nconst session = data.sessions[currentData.from];\n\nconst validItems = [];\nconst invalidItems = [];\n\n// Validate each item against menu\nfor (const item of parsedItems) {\n  const menuItem = menuItems.find(m => m.Code === item.code);\n  \n  if (menuItem && menuItem.Available !== 'No') {\n    validItems.push({\n      code: item.code,\n      name: menuItem.Name,\n      price: parseFloat(menuItem.Price),\n      qty: item.qty,\n      category: menuItem.Category || 'Other'\n    });\n  } else if (menuItem && menuItem.Available === 'No') {\n    invalidItems.push(`${item.code} (unavailable)`);\n  } else {\n    invalidItems.push(item.code);\n  }\n}\n\n// Check for invalid items\nif (invalidItems.length > 0) {\n  return {\n    ...currentData,\n    error: 'INVALID_CODES',\n    error_msg: `❌ *Invalid or unavailable items:*\\n${invalidItems.join(', ')}\\n\\nPlease check the menu and try again.`\n  };\n}\n\n// Add valid items to cart\nfor (const item of validItems) {\n  const existing = session.cart.find(c => c.code === item.code);\n  \n  if (existing) {\n    existing.qty += item.qty;\n  } else {\n    session.cart.push(item);\n  }\n}\n\nreturn {\n  ...currentData,\n  session: session,\n  added_items: validItems\n};"
+      },

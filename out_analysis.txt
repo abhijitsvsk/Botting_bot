@@ -1,0 +1,199 @@
+--- SANITIZE INPUT ---
+const phone = ($input.item.json.from || '').toString();
+const phoneRegex = /^[+\d-]+$/;
+if (!phoneRegex.test(phone)) return [{json: {...$input.item.json, error: 'INVALID_PHONE', error_msg: 'Invalid phone format'}}];
+if (phone.length > 20) return [{json: {...$input.item.json, error: 'PHONE_TOO_LONG', error_msg: 'Phone too long'}}];
+const raw = ($input.item.json.raw_text || '').toUpperCase();
+const text = raw.replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+const action = ($input.item.json.button_id || $input.item.json.list_id || '').toUpperCase();
+return [{json: {...$input.item.json, text, action, timestamp: Date.now()}}];
+--- POSTGRES: Load Session from DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "SELECT phone, table_number, cart, customer_name, last_seen, preferences, session_started, total_orders FROM user_sessions WHERE phone = $1 ORDER BY last_seen DESC LIMIT 1",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ $json.from }}"
+        }
+      ]
+    }
+  }
+}
+--- POSTGRES: Save Session to DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "INSERT INTO user_sessions (phone, table_number, cart, customer_name, last_seen, preferences, session_started) VALUES ($1, $2, $3::jsonb, $4, NOW(), $5::jsonb, to_timestamp($6/1000)) ON CONFLICT (phone) DO UPDATE SET table_number = EXCLUDED.table_number, cart = EXCLUDED.cart, customer_name = EXCLUDED.customer_name, last_seen = NOW(), preferences = EXCLUDED.preferences RETURNING *",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ $json.session.phone }}"
+        },
+        {
+          "column": "$2",
+          "value": "={{ $json.session.table_number }}"
+        },
+        {
+          "column": "$3",
+          "value": "={{ JSON.stringify($json.session.cart) }}"
+        },
+        {
+          "column": "$4",
+          "value": "={{ $json.session.customer_name }}"
+        },
+        {
+          "column": "$5",
+          "value": "={{ JSON.stringify($json.session.preferences) }}"
+        },
+        {
+          "column": "$6",
+          "value": "={{ $json.session.session_started }}"
+        }
+      ]
+    }
+  }
+}
+--- POSTGRES: Save Table to DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "UPDATE user_sessions SET table_number = $1, last_seen = NOW() WHERE phone = $2 RETURNING *",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ $json.session.table_number }}"
+        },
+        {
+          "column": "$2",
+          "value": "={{ $json.from }}"
+        }
+      ]
+    }
+  }
+}
+--- POSTGRES: Get Menu from DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "SELECT code, name, category, price, description, is_available FROM menu_items WHERE is_available = true ORDER BY category, code"
+}
+--- POSTGRES: Lookup Items in DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "SELECT code, name, price, category, is_available FROM menu_items WHERE code = ANY($1::text[]) AND is_available = true",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ JSON.stringify($json.parsed_items.map(i => i.code)) }}"
+        }
+      ]
+    }
+  }
+}
+--- POSTGRES: Update Cart in DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "UPDATE user_sessions SET cart = $1::jsonb, last_seen = NOW() WHERE phone = $2 RETURNING *",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ JSON.stringify($json.session.cart) }}"
+        },
+        {
+          "column": "$2",
+          "value": "={{ $json.from }}"
+        }
+      ]
+    }
+  }
+}
+--- POSTGRES: Save Order to DB ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "INSERT INTO orders (order_id, table_number, phone, customer_name, items, subtotal, tax, total, status, upi_string, created_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, NOW()) RETURNING *",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ $json.order.order_id }}"
+        },
+        {
+          "column": "$2",
+          "value": "={{ $json.order.table_number }}"
+        },
+        {
+          "column": "$3",
+          "value": "={{ $json.from }}"
+        },
+        {
+          "column": "$4",
+          "value": "={{ $json.order.customer_name }}"
+        },
+        {
+          "column": "$5",
+          "value": "={{ JSON.stringify($json.order.items) }}"
+        },
+        {
+          "column": "$6",
+          "value": "={{ $json.order.subtotal }}"
+        },
+        {
+          "column": "$7",
+          "value": "={{ $json.order.tax }}"
+        },
+        {
+          "column": "$8",
+          "value": "={{ $json.order.total }}"
+        },
+        {
+          "column": "$9",
+          "value": "pending_payment"
+        },
+        {
+          "column": "$10",
+          "value": "={{ $json.upi_string }}"
+        }
+      ]
+    }
+  }
+}
+--- POSTGRES: Clear Cart After Order ---
+{
+  "authentication": "genericCredentialType",
+  "genericAuthType": "postgresApi",
+  "operation": "executeQuery",
+  "query": "UPDATE user_sessions SET cart = '[]'::jsonb, total_orders = total_orders + 1, last_seen = NOW() WHERE phone = $1 RETURNING *",
+  "additionalFields": {
+    "values": {
+      "values": [
+        {
+          "column": "$1",
+          "value": "={{ $json.from }}"
+        }
+      ]
+    }
+  }
+}
