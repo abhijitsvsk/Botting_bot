@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Kinetic Engine | Kitchen Display System</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style type="text/tailwindcss">
+        :root {
+            --bg-pale-blue-grey: #F8FAFC;
+            --electric-blue: #2563EB;
+            --electric-amber: #F59E0B;
+            --electric-green: #10B981;
+            --action-orange: #F97316;
+            --action-emerald: #059669;
+            --slate-900: #0F172A;
+            --slate-700: #334155;
+            --slate-600: #475569;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-pale-blue-grey);
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .kinetic-gradient {
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary": "#10B981",
+                      "on-surface": "#0F172A",
+                      "electric-blue": "#2563EB",
+                      "electric-amber": "#F59E0B",
+                      "electric-green": "#10B981"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              }
+            },
+          }
+        }
+      </script>
+</head>
+<body class="text-on-surface antialiased overflow-hidden">
+<header class="w-full h-[64px] bg-white border-b border-slate-200 px-6 flex items-center justify-between z-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary" data-icon="restaurant">restaurant</span>
+<h1 class="text-slate-900 text-[20px] font-bold tracking-tight">Live Kitchen</h1>
+</div>
+<div class="absolute left-1/2 -translate-x-1/2">
+<span class="mono text-[18px] text-slate-900 tracking-widest bg-slate-100 px-4 py-1 rounded-md border border-slate-300">
+            18:42:05
+        </span>
+</div>
+<div class="flex items-center gap-4 text-slate-600 text-sm">
+<div class="flex items-center gap-3">
+<label class="font-semibold text-slate-700" for="auto-clear">Auto-clear ready orders:</label>
+<div class="relative">
+<input class="w-[60px] h-8 bg-white border border-slate-300 rounded text-center text-slate-900 focus:ring-2 focus:ring-primary outline-none font-bold" id="auto-clear" type="number" value="30"/>
+</div>
+<span class="uppercase tracking-widest text-[10px] font-extrabold text-slate-500">sec</span>
+</div>
+<div class="h-6 w-[1px] bg-slate-200 mx-2"></div>
+<button class="material-symbols-outlined p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-700" data-icon="settings">settings</button>
+<button class="material-symbols-outlined p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-700" data-icon="notifications">notifications</button>
+</div>
+</header>
+<main class="p-4 h-[calc(100vh-64px)] overflow-y-auto">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+<div class="bg-white rounded-[16px] border-[3px] border-electric-blue flex flex-col p-4 shadow-md">
+<div class="flex justify-between items-center mb-4">
+<span class="text-slate-900 font-extrabold text-[16px] mono">ORD-9F2B</span>
+<span class="bg-blue-50 text-electric-blue text-[12px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Table 4</span>
+<span class="text-slate-600 text-sm font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span>
+                    3m
+                </span>
+</div>
+<div class="h-[1px] bg-slate-100 w-full mb-4"></div>
+<div class="flex-grow space-y-3 mb-6">
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">2x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Masala Dosa</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Idli Sambar (2pc)</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Filter Coffee</span>
+</div>
+</div>
+<button class="w-full h-[48px] rounded-[12px] bg-orange-500 text-white font-black tracking-wider hover:bg-orange-600 shadow-sm transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" data-icon="play_arrow">play_arrow</span>
+                START PREPARING
+            </button>
+</div>
+<div class="bg-white rounded-[16px] border-[3px] border-electric-amber flex flex-col p-4 shadow-md">
+<div class="flex justify-between items-center mb-4">
+<span class="text-slate-900 font-extrabold text-[16px] mono">ORD-3A12</span>
+<span class="bg-slate-100 text-slate-700 text-[12px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Takeaway</span>
+<span class="text-red-600 text-sm font-black flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] fill-1" data-icon="priority_high">priority_high</span>
+                    12m
+                </span>
+</div>
+<div class="h-[1px] bg-slate-100 w-full mb-4"></div>
+<div class="flex-grow space-y-3 mb-6">
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Paneer Butter Masala</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">3x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Butter Naan</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Mango Lassi</span>
+</div>
+</div>
+<button class="w-full h-[48px] rounded-[12px] bg-emerald-500 text-white font-black tracking-wider hover:bg-emerald-600 shadow-sm transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+                MARK READY
+            </button>
+</div>
+<div class="bg-white rounded-[16px] border-[3px] border-electric-blue flex flex-col p-4 shadow-md">
+<div class="flex justify-between items-center mb-4">
+<span class="text-slate-900 font-extrabold text-[16px] mono">ORD-7C4D</span>
+<span class="bg-blue-50 text-electric-blue text-[12px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Table 12</span>
+<span class="text-slate-600 text-sm font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span>
+                    2m
+                </span>
+</div>
+<div class="h-[1px] bg-slate-100 w-full mb-4"></div>
+<div class="flex-grow space-y-3 mb-4">
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Satay Chicken Skewers</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Pad Thai Noodles</span>
+</div>
+</div>
+<div class="bg-red-50 rounded-[8px] p-2.5 mb-4 flex items-center gap-3 border border-red-200">
+<span class="material-symbols-outlined text-red-600" data-icon="warning" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="text-red-700 font-black text-[13px] leading-tight uppercase tracking-tight">ALLERGEN: Peanuts — Must Acknowledge</span>
+</div>
+<button class="w-full h-[48px] rounded-[12px] bg-slate-100 text-slate-400 font-black tracking-wider cursor-not-allowed flex items-center justify-center gap-2" disabled="">
+<span class="material-symbols-outlined" data-icon="lock">lock</span>
+                Acknowledge Allergen First
+            </button>
+</div>
+<div class="bg-white rounded-[16px] border-[3px] border-electric-green flex flex-col p-4 shadow-md">
+<div class="flex justify-between items-center mb-4">
+<span class="text-slate-900 font-extrabold text-[16px] mono">ORD-2D11</span>
+<span class="bg-blue-50 text-electric-blue text-[12px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Table 2</span>
+<span class="text-emerald-600 text-sm font-black flex items-center gap-1">
+<span class="material-symbols-outlined text-[20px] fill-1" data-icon="done_all">done_all</span>
+                    Ready
+                </span>
+</div>
+<div class="h-[1px] bg-slate-100 w-full mb-4"></div>
+<div class="flex-grow space-y-3 mb-6">
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Garden Salad</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">1x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Garlic Bread</span>
+</div>
+</div>
+<button class="w-full h-[48px] rounded-[12px] border-2 border-emerald-500 text-emerald-600 font-black tracking-wider hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined font-bold" data-icon="check">check</span>
+                CLEAR ORDER
+            </button>
+</div>
+<div class="bg-white rounded-[16px] border-[3px] border-electric-amber flex flex-col p-4 shadow-md">
+<div class="flex justify-between items-center mb-4">
+<span class="text-slate-900 font-extrabold text-[16px] mono">ORD-8E22</span>
+<span class="bg-blue-50 text-electric-blue text-[12px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Table 8</span>
+<span class="text-slate-600 text-sm font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span>
+                    4m
+                </span>
+</div>
+<div class="h-[1px] bg-slate-100 w-full mb-4"></div>
+<div class="flex-grow space-y-3 mb-6">
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">2x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Classic Burger</span>
+</div>
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">2x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Coke Zero</span>
+</div>
+</div>
+<button class="w-full h-[48px] rounded-[12px] bg-emerald-500 text-white font-black tracking-wider hover:bg-emerald-600 shadow-sm transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+                MARK READY
+            </button>
+</div>
+<div class="bg-white rounded-[16px] border-[3px] border-electric-blue flex flex-col p-4 shadow-md">
+<div class="flex justify-between items-center mb-4">
+<span class="text-slate-900 font-extrabold text-[16px] mono">ORD-5B66</span>
+<span class="bg-slate-100 text-slate-700 text-[12px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Takeaway</span>
+<span class="text-red-600 text-sm font-black flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="timer_off">timer_off</span>
+                    9m
+                </span>
+</div>
+<div class="h-[1px] bg-slate-100 w-full mb-4"></div>
+<div class="flex-grow space-y-3 mb-6">
+<div class="flex items-start gap-3">
+<span class="text-electric-amber font-extrabold text-[14px] mono">4x</span>
+<span class="text-slate-900 text-[14px] font-semibold">Spring Rolls (Set)</span>
+</div>
+</div>
+<button class="w-full h-[48px] rounded-[12px] bg-orange-500 text-white font-black tracking-wider hover:bg-orange-600 shadow-sm transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" data-icon="play_arrow">play_arrow</span>
+                START PREPARING
+            </button>
+</div>
+</div>
+</main>
+<div class="fixed bottom-6 right-6 flex items-center gap-3 bg-white/95 backdrop-blur-md px-5 py-2.5 rounded-full border border-slate-200 shadow-xl">
+<div class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></div>
+<span class="text-[11px] font-black text-slate-800 uppercase tracking-widest">System Active: Terminal 01</span>
+</div>
+
+</body></html>

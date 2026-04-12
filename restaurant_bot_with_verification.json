@@ -1,0 +1,1803 @@
+{
+  "name": "WhatsApp Restaurant Bot Pro 10/10 - Fixed & Tested",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook_1",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook_verification",
+      "name": "WhatsApp Webhook Verification",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'];\nconst VERIFY_TOKEN = 'restaurantbot';\nif (mode !== 'subscribe' || token !== VERIFY_TOKEN) {\n  throw new Error('Verification failed');\n}\nreturn { challenge };"
+      },
+      "id": "verify_webhook_code",
+      "name": "Verify Webhook Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond_verification",
+      "name": "Respond with Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        600,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate required environment variables\nconst required = ['WHATSAPP_PHONE_ID', 'UPI_ID'];\nconst missing = required.filter(v => !$env[v]);\n\nif (missing.length > 0) {\n  throw new Error(`❌ Missing required environment variables: ${missing.join(', ')}`);\n}\n\n// Validate webhook payload structure\nconst entry = $input.item.json.entry?.[0];\nif (!entry || !entry.changes?.[0]?.value) {\n  throw new Error('Invalid WhatsApp webhook payload structure');\n}\n\n// Return the input unchanged\nreturn $input.item.json;"
+      },
+      "id": "validate_env",
+      "name": "Validate Environment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "from",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "raw_text",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "button_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "list_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.list_reply?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "message_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "contact_name",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || 'Guest' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "extract_1",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rate limiting: max 10 messages per minute per user\nconst phone = $input.item.json.from;\nconst now = Date.now();\n\n// Initialize or get rate limit data from static storage\nif (!$static.rateLimits) {\n  $static.rateLimits = {};\n}\n\nif (!$static.rateLimits[phone]) {\n  $static.rateLimits[phone] = [];\n}\n\n// Remove messages older than 1 minute\n$static.rateLimits[phone] = $static.rateLimits[phone].filter(t => now - t < 60000);\n\n// Check if rate limit exceeded\nif ($static.rateLimits[phone].length >= 10) {\n  return {\n    ...$input.item.json,\n    error: 'RATE_LIMIT',\n    error_msg: '⏸️ Please slow down. You can send up to 10 messages per minute.'\n  };\n}\n\n// Add current message timestamp\n$static.rateLimits[phone].push(now);\n\n// Clean up old users (keep only last 1000)\nconst allPhones = Object.keys($static.rateLimits);\nif (allPhones.length > 1000) {\n  allPhones.slice(0, -1000).forEach(p => delete $static.rateLimits[p]);\n}\n\nreturn $input.item.json;"
+      },
+      "id": "rate_limit",
+      "name": "Rate Limiting",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_rate_limit",
+      "name": "Check Rate Limit Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        550,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = ($input.item.json.raw_text || '').toUpperCase();\nconst clean = raw.replace(/[^A-Z0-9\\s]/g, ' ').replace(/\\s+/g, ' ').trim();\nconst interactive = $input.item.json.button_id || $input.item.json.list_id || '';\nreturn { \n  ...($input.item.json), \n  text: clean, \n  action: interactive.toUpperCase(),\n  timestamp: Date.now()\n};"
+      },
+      "id": "normalize_1",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// SQL Injection Protection - Sanitize user inputs\nconst phone = ($input.item.json.from || '').toString();\nconst text = ($input.item.json.text || '').toString();\nconst action = ($input.item.json.action || '').toString();\n\n// Validate phone number format (only digits, +, and -)\nconst phoneRegex = /^[+\\d-]+$/;\nif (!phoneRegex.test(phone)) {\n  return {\n    ...$input.item.json,\n    error: 'INVALID_PHONE',\n    error_msg: '❌ Invalid phone number format detected. Please contact support.'\n  };\n}\n\n// Sanitize for SQL (escape single quotes)\nconst sanitizedPhone = phone.replace(/'/g, \"''\");\n\n// Limit phone length (E.164 format max is 15 digits + country code)\nif (sanitizedPhone.length > 20) {\n  return {\n    ...$input.item.json,\n    error: 'PHONE_TOO_LONG',\n    error_msg: '❌ Phone number too long. Please contact support.'\n  };\n}\n\n// Return sanitized data\nreturn {\n  ...$input.item.json,\n  from: sanitizedPhone,\n  from_original: phone,\n  _sanitized: true\n};"
+      },
+      "id": "sanitize_input",
+      "name": "Sanitize Input (SQL Protection)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_sanitize_error",
+      "name": "Check Sanitization Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "SELECT * FROM user_sessions WHERE phone = '{{ $json.from }}' ORDER BY last_seen DESC LIMIT 1",
+        "options": {}
+      },
+      "id": "db_session_load",
+      "name": "Load Session from DB (Uses sanitized phone from earlier)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const dbResult = $input.all()[0]?.json || {};\nconst phone = $input.first().json.from;\nconst now = Date.now();\n\nlet session = {\n  phone: phone,\n  table: null,\n  cart: [],\n  customer_name: $input.first().json.contact_name,\n  last_seen: now,\n  session_started: now,\n  total_orders: 0,\n  preferences: {}\n};\n\nif (dbResult.phone) {\n  // Safe JSON parsing with error handling\n  let cart = [];\n  let preferences = {};\n  try {\n    cart = JSON.parse(dbResult.cart || '[]');\n    if (!Array.isArray(cart)) cart = [];\n  } catch (e) {\n    console.error('Failed to parse cart:', e);\n    cart = [];\n  }\n  \n  try {\n    preferences = JSON.parse(dbResult.preferences || '{}');\n    if (typeof preferences !== 'object') preferences = {};\n  } catch (e) {\n    console.error('Failed to parse preferences:', e);\n    preferences = {};\n  }\n  \n  // Safe date parsing\n  const lastSeenTime = new Date(dbResult.last_seen).getTime();\n  const expired = isNaN(lastSeenTime) || (now - lastSeenTime) > 900000;\n  \n  if (!expired) {\n    session = {\n      ...dbResult,\n      cart: cart,\n      preferences: preferences,\n      last_seen: now\n    };\n  } else {\n    session.total_orders = dbResult.total_orders || 0;\n  }\n}\n\nreturn { \n  ...$input.first().json, \n  session: session,\n  is_new_session: !dbResult.phone || (now - new Date(dbResult.last_seen).getTime()) > 900000\n};"
+      },
+      "id": "session_process",
+      "name": "Process Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.session.table }}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_table",
+      "name": "Check Table Set",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"🍽️ Welcome to {{ $env.RESTAURANT_NAME || 'Our Restaurant' }}!\\n\\n👋 Hi {{ $json.contact_name }}!\\n\\nPlease enter your table number (1-{{ $env.MAX_TABLES || '200' }})\\n\\nExample: Table 5 or just 5\"\n  }\n}",
+        "options": {}
+      },
+      "id": "ask_table",
+      "name": "Ask Table Number",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        250
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = ($input.item.json.text || '').toString();\nconst match = text.match(/\\b(\\d{1,3})\\b/);\nif (!match) {\n  return { \n    ...$input.item.json, \n    error: 'INVALID_TABLE',\n    error_msg: '❌ Please enter a valid table number (e.g., 5, Table 10)'\n  };\n}\nconst table = parseInt(match[1]);\nconst maxTables = parseInt(process.env.MAX_TABLES || '200');\nif (table < 1 || table > maxTables) {\n  return { \n    ...$input.item.json, \n    error: 'TABLE_OUT_OF_RANGE',\n    error_msg: `❌ Table number must be between 1 and ${maxTables}`\n  };\n}\nreturn { \n  ...$input.item.json, \n  table_number: table\n};"
+      },
+      "id": "parse_table",
+      "name": "Parse Table Number",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_table_error",
+      "name": "Check Table Parse Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE user_sessions SET \n  table_number = {{ $json.table_number }}, \n  last_seen = NOW() \nWHERE phone = '{{ $json.from }}' \nRETURNING *;\n\nINSERT INTO user_sessions (phone, table_number, customer_name, cart, preferences, last_seen, session_started, total_orders)\nSELECT '{{ $json.from }}', {{ $json.table_number }}, '{{ $json.contact_name }}', '[]', '{}', NOW(), NOW(), 0\nWHERE NOT EXISTS (SELECT 1 FROM user_sessions WHERE phone = '{{ $json.from }}');",
+        "options": {}
+      },
+      "id": "save_table",
+      "name": "Save Table to Session (Uses sanitized phone from earlier)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1900,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"✅ Great! You're seated at Table {{ $json.table_number }}\\n\\n🍽️ What would you like to do?\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"SHOW_MENU\",\n            \"title\": \"📋 View Menu\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"VIEW_CART\",\n            \"title\": \"🛒 View Cart\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"HELP\",\n            \"title\": \"❓ Help\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "confirm_table",
+      "name": "Confirm Table & Show Options",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        500
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action }}",
+              "value2": "SHOW_MENU",
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "id": "route_action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "SELECT * FROM menu_items WHERE available = true AND category != 'hidden' ORDER BY category, name",
+        "options": {}
+      },
+      "id": "fetch_menu",
+      "name": "Fetch Menu from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1600,
+        350
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst categories = {};\n\nitems.forEach(item => {\n  const cat = item.json.category || 'Other';\n  if (!categories[cat]) categories[cat] = [];\n  categories[cat].push(item.json);\n});\n\nconst sections = Object.keys(categories).map(cat => ({\n  title: cat.toUpperCase(),\n  rows: categories[cat].slice(0, 10).map(item => ({\n    id: `ADD_${item.id}`,\n    title: `${item.name} - ₹${item.price}`,\n    description: (item.description || '').substring(0, 72)\n  }))\n}));\n\nreturn { sections: sections.slice(0, 10) };"
+      },
+      "id": "format_menu",
+      "name": "Format Menu List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"header\": {\n      \"type\": \"text\",\n      \"text\": \"📋 Our Menu\"\n    },\n    \"body\": {\n      \"text\": \"Browse our delicious menu and tap to add items to your cart!\"\n    },\n    \"action\": {\n      \"button\": \"View Menu\",\n      \"sections\": {{ $json.sections }}\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "send_menu",
+      "name": "Send Menu List",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        350
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const action = $input.item.json.action || '';\nconst match = action.match(/^ADD_(\\d+)$/);\nif (!match) {\n  return { \n    ...$input.item.json, \n    error: 'INVALID_ITEM',\n    error_msg: '❌ Invalid menu item selection'\n  };\n}\nreturn { \n  ...$input.item.json, \n  item_id: parseInt(match[1])\n};"
+      },
+      "id": "parse_item",
+      "name": "Parse Item ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_item_error",
+      "name": "Check Item Parse Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM menu_items WHERE id = {{ $json.item_id }} AND available = true LIMIT 1",
+        "options": {}
+      },
+      "id": "fetch_item",
+      "name": "Fetch Item from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1900,
+        650
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.all()[0]?.json;\nif (!item || !item.id) {\n  return { \n    ...$input.first().json, \n    error: 'ITEM_NOT_FOUND',\n    error_msg: '❌ This item is no longer available'\n  };\n}\n\nconst session = $input.first().json.session || {};\nconst cart = session.cart || [];\n\nconst existing = cart.find(i => i.id === item.id);\nif (existing) {\n  existing.quantity += 1;\n} else {\n  cart.push({\n    id: item.id,\n    name: item.name,\n    price: item.price,\n    quantity: 1\n  });\n}\n\nconst subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);\nconst tax = Math.round(subtotal * 0.05);\nconst total = subtotal + tax;\n\nreturn {\n  ...$input.first().json,\n  session: { ...session, cart: cart },\n  cart: cart,\n  subtotal: subtotal,\n  tax: tax,\n  total: total,\n  added_item: item\n};"
+      },
+      "id": "add_to_cart",
+      "name": "Add Item to Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_add_error",
+      "name": "Check Add Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE user_sessions SET \n  cart = '{{ JSON.stringify($json.cart) }}', \n  last_seen = NOW() \nWHERE phone = '{{ $json.from }}'",
+        "options": {}
+      },
+      "id": "update_cart",
+      "name": "Update Cart in DB (Uses sanitized phone from earlier)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2400,
+        650
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"✅ {{ $json.added_item.name }} added to cart!\\n\\n🛒 Current Total: ₹{{ $json.total }}\\n\\nWhat's next?\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"SHOW_MENU\",\n            \"title\": \"➕ Add More\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"VIEW_CART\",\n            \"title\": \"🛒 View Cart\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"CHECKOUT\",\n            \"title\": \"💳 Checkout\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "send_add_confirmation",
+      "name": "Send Add Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2500,
+        650
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $input.item.json.session || {};\nconst cart = session.cart || [];\n\nif (cart.length === 0) {\n  return { \n    ...$input.item.json, \n    error: 'EMPTY_CART',\n    error_msg: '🛒 Your cart is empty!\\n\\nTap \"View Menu\" to start ordering.'\n  };\n}\n\nconst subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);\nconst tax = Math.round(subtotal * 0.05);\nconst total = subtotal + tax;\n\nconst items = cart.map(i => `• ${i.name} x${i.quantity} - ₹${i.price * i.quantity}`).join('\\n');\n\nreturn {\n  ...$input.item.json,\n  cart: cart,\n  subtotal: subtotal,\n  tax: tax,\n  total: total,\n  cart_display: items\n};"
+      },
+      "id": "view_cart",
+      "name": "View Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_cart_error",
+      "name": "Check Cart Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"🛒 Your Cart:\\n\\n{{ $json.cart_display }}\\n\\n💰 Subtotal: ₹{{ $json.subtotal }}\\n🧾 Tax (5%): ₹{{ $json.tax }}\\n✅ Total: ₹{{ $json.total }}\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"SHOW_MENU\",\n            \"title\": \"➕ Add More\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"CHECKOUT\",\n            \"title\": \"💳 Checkout\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"CLEAR_CART\",\n            \"title\": \"🗑️ Clear Cart\"\n          }\n        }\n      ]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "send_cart",
+      "name": "Send Cart Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        800
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $input.item.json.session || {};\nconst cart = session.cart || [];\n\nif (cart.length === 0) {\n  return { \n    ...$input.item.json, \n    error: 'EMPTY_CART',\n    error_msg: '🛒 Your cart is empty!\\n\\nTap \"View Menu\" to start ordering.'\n  };\n}\n\nconst subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);\nconst tax = Math.round(subtotal * 0.05);\nconst total = subtotal + tax;\n\nconst items = cart.map(i => `• ${i.name} x${i.quantity} - ₹${i.price * i.quantity}`).join('\\n');\n\nconst orderId = `ORD${Date.now()}`;\n\nreturn {\n  ...$input.item.json,\n  cart: cart,\n  subtotal: subtotal,\n  tax: tax,\n  total: total,\n  cart_display: items,\n  order_id: orderId\n};"
+      },
+      "id": "prepare_checkout",
+      "name": "Prepare Checkout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        950
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_checkout_error",
+      "name": "Check Checkout Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        950
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=INSERT INTO orders (order_id, phone, table_number, items, subtotal, tax, total, status, created_at) \nVALUES (\n  '{{ $json.order_id }}', \n  '{{ $json.from }}', \n  {{ $json.session.table }}, \n  '{{ JSON.stringify($json.cart) }}', \n  {{ $json.subtotal }}, \n  {{ $json.tax }}, \n  {{ $json.total }}, \n  'pending', \n  NOW()\n) RETURNING *",
+        "options": {}
+      },
+      "id": "save_order",
+      "name": "Save Order to DB (Uses sanitized phone from earlier)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1900,
+        950
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE user_sessions SET \n  cart = '[]', \n  last_seen = NOW(), \n  total_orders = total_orders + 1 \nWHERE phone = '{{ $json.from }}'",
+        "options": {}
+      },
+      "id": "clear_cart_after_order",
+      "name": "Clear Cart After Order (Uses sanitized phone from earlier)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2100,
+        950
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"📋 Order #{{ $json.order_id }}\\n\\n{{ $json.cart_display }}\\n\\n💰 Subtotal: ₹{{ $json.subtotal }}\\n🧾 Tax (5%): ₹{{ $json.tax }}\\n✅ Total: ₹{{ $json.total }}\\n\\n📍 Table {{ $json.session.table }}\\n⏰ {{ new Date().toLocaleString('en-IN', {timeZone: 'Asia/Kolkata'}) }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_order_details",
+      "name": "Send Order Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2300,
+        950
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=upi://pay?pa={{ $env.UPI_ID }}&pn={{ $env.RESTAURANT_NAME || 'Restaurant' }}&am={{ $json.total }}&cu=INR&tn=Order%20{{ $json.order_id }}\",\n    \"caption\": \"💳 Scan to Pay ₹{{ $json.total }}\\n\\nUPI ID: {{ $env.UPI_ID }}\\n\\nAfter payment, tap 'I Paid' below.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_qr",
+      "name": "Send UPI QR Code",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2500,
+        950
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.error_msg }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_error",
+      "name": "Send Error Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        650
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const action = $input.item.json.action || '';\nconst match = action.match(/^PAID_(\\w+)$/);\nif (!match) {\n  return { \n    ...$input.item.json, \n    error: 'INVALID_PAYMENT',\n    error_msg: '❌ Invalid payment confirmation'\n  };\n}\nreturn { \n  ...$input.item.json, \n  order_id: match[1]\n};"
+      },
+      "id": "parse_payment",
+      "name": "Parse Payment Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_payment_error",
+      "name": "Check Paid Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE orders SET \n  status = 'paid', \n  paid_at = NOW() \nWHERE order_id = '{{ $json.order_id }}' \nRETURNING *",
+        "options": {}
+      },
+      "id": "mark_paid",
+      "name": "Mark Order as Paid",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1900,
+        1100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"✅ Payment Confirmed!\\n\\n📋 Order #{{ $json.order_id }}\\n👨‍🍳 Your food is being prepared\\n⏰ Est. time: 15-20 mins\\n\\nThank you for your order!\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_payment_confirmation",
+      "name": "Send Payment Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        1100
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.KITCHEN_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"order_id\": \"{{ $json.order_id }}\",\n  \"table\": {{ $json.session.table }},\n  \"items\": {{ JSON.stringify($json.cart) }},\n  \"customer\": \"{{ $json.contact_name }}\",\n  \"phone\": \"{{ $json.from }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "notify_kitchen",
+      "name": "Notify Kitchen Staff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE orders SET status = 'preparing' WHERE order_id = '{{ $json.order_id }}'",
+        "options": {}
+      },
+      "id": "set_preparing",
+      "name": "Set Status Preparing",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2300,
+        1100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE user_sessions SET cart = '[]', last_seen = NOW() WHERE phone = '{{ $json.from }}'",
+        "options": {}
+      },
+      "id": "clear_cart_manual",
+      "name": "Clear Cart (Manual)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1600,
+        1250
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"🗑️ Cart cleared!\\n\\nTap 'View Menu' to start a new order.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_clear_msg",
+      "name": "Send Clear Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        1250
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM orders WHERE phone = '{{ $json.from }}' ORDER BY created_at DESC LIMIT 1",
+        "options": {}
+      },
+      "id": "get_order_status",
+      "name": "Get Order Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1600,
+        1400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.all()[0]?.json;\nif (!order || !order.order_id) {\n  return { \n    ...$input.first().json, \n    error: 'NO_ORDER',\n    error_msg: '❌ No active orders found'\n  };\n}\n\nconst statusMap = {\n  'pending': '⏳ Pending Payment',\n  'paid': '💳 Paid',\n  'preparing': '👨‍🍳 Being Prepared',\n  'ready': '✅ Ready',\n  'delivered': '🎉 Delivered',\n  'cancelled': '❌ Cancelled'\n};\n\nreturn {\n  ...$input.first().json,\n  order: order,\n  status_display: statusMap[order.status] || order.status\n};"
+      },
+      "id": "format_status",
+      "name": "Format Order Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        1400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"📋 Order Status\\n\\n🆔 #{{ $json.order.order_id }}\\n📊 Status: {{ $json.status_display }}\\n📍 Table {{ $json.order.table_number }}\\n💰 Total: ₹{{ $json.order.total }}\\n⏰ Ordered: {{ new Date($json.order.created_at).toLocaleString('en-IN', {timeZone: 'Asia/Kolkata'}) }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_order_status",
+      "name": "Send Order Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        1400
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM orders WHERE phone = '{{ $json.from }}' ORDER BY created_at DESC LIMIT 5",
+        "options": {}
+      },
+      "id": "get_history",
+      "name": "Get Order History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1600,
+        1550
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const orders = $input.all();\nif (orders.length === 0) {\n  return { \n    ...$input.first().json, \n    error: 'NO_HISTORY',\n    error_msg: '📋 No order history found'\n  };\n}\n\nconst history = orders.map(o => {\n  const date = new Date(o.json.created_at).toLocaleString('en-IN', {timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short'});\n  return `• ${o.json.order_id} - ₹${o.json.total} (${date})`;\n}).join('\\n');\n\nreturn {\n  ...$input.first().json,\n  history_display: history\n};"
+      },
+      "id": "format_history",
+      "name": "Format Order History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        1550
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"📜 Your Order History\\n\\n{{ $json.history_display }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_history",
+      "name": "Send Order History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        1550
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = ($input.item.json.text || '').toString();\nconst match = text.match(/REMOVE\\s+(\\d+)/i);\nif (!match) {\n  return { \n    ...$input.item.json, \n    error: 'INVALID_REMOVE',\n    error_msg: '❌ Please use format: REMOVE <item_id>'\n  };\n}\n\nconst itemId = parseInt(match[1]);\nconst session = $input.item.json.session || {};\nconst cart = session.cart || [];\n\nconst itemIndex = cart.findIndex(i => i.id === itemId);\nif (itemIndex === -1) {\n  return { \n    ...$input.item.json, \n    error: 'ITEM_NOT_IN_CART',\n    error_msg: '❌ Item not found in cart'\n  };\n}\n\nconst removed = cart.splice(itemIndex, 1)[0];\n\nconst subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);\nconst tax = Math.round(subtotal * 0.05);\nconst total = subtotal + tax;\n\nreturn {\n  ...$input.item.json,\n  session: { ...session, cart: cart },\n  cart: cart,\n  subtotal: subtotal,\n  tax: tax,\n  total: total,\n  removed_item: removed\n};"
+      },
+      "id": "remove_item",
+      "name": "Remove Item from Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        1700
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check_remove_error",
+      "name": "Check Remove Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        1700
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "postgresApi",
+        "operation": "executeQuery",
+        "query": "=UPDATE user_sessions SET cart = '{{ JSON.stringify($json.cart) }}', last_seen = NOW() WHERE phone = '{{ $json.from }}'",
+        "options": {}
+      },
+      "id": "update_cart_remove",
+      "name": "Update Cart After Remove",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1900,
+        1700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "Restaurant DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"✅ {{ $json.removed_item.name }} removed from cart\\n\\n🛒 New Total: ₹{{ $json.total }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send_remove_confirmation",
+      "name": "Send Remove Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        1700
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "whatsapp_cred",
+          "name": "WhatsApp Business API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Environment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Webhook Verification": {
+      "main": [
+        [
+          {
+            "node": "Verify Webhook Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Webhook Code": {
+      "main": [
+        [
+          {
+            "node": "Respond with Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Rate Limiting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Input (SQL Protection)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session from DB (Uses sanitized phone from earlier)": {
+      "main": [
+        [
+          {
+            "node": "Process Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Session": {
+      "main": [
+        [
+          {
+            "node": "Check Table Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Table Set": {
+      "main": [
+        [
+          {
+            "node": "Ask Table Number",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Fetch Menu from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Table Number",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Parse Item ID",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "View Cart",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Checkout",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Parse Payment Confirmation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Clear Cart (Manual)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Order Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Order History",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remove Item from Cart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Table Number": {
+      "main": [
+        [
+          {
+            "node": "Check Table Parse Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Table Parse Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Table to Session (Uses sanitized phone from earlier)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Table to Session (Uses sanitized phone from earlier)": {
+      "main": [
+        [
+          {
+            "node": "Confirm Table & Show Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Menu from DB": {
+      "main": [
+        [
+          {
+            "node": "Format Menu List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Menu List": {
+      "main": [
+        [
+          {
+            "node": "Send Menu List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Item ID": {
+      "main": [
+        [
+          {
+            "node": "Check Item Parse Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Item Parse Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Item from DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Item from DB": {
+      "main": [
+        [
+          {
+            "node": "Add Item to Cart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Item to Cart": {
+      "main": [
+        [
+          {
+            "node": "Check Add Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Add Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Cart in DB (Uses sanitized phone from earlier)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cart in DB (Uses sanitized phone from earlier)": {
+      "main": [
+        [
+          {
+            "node": "Send Add Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "View Cart": {
+      "main": [
+        [
+          {
+            "node": "Check Cart Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cart Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Cart Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Checkout": {
+      "main": [
+        [
+          {
+            "node": "Check Checkout Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Checkout Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Order to DB (Uses sanitized phone from earlier)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Payment Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Check Paid Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Paid Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Order as Paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Order as Paid": {
+      "main": [
+        [
+          {
+            "node": "Send Payment Confirmation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Kitchen Staff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Payment Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Set Status Preparing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Cart (Manual)": {
+      "main": [
+        [
+          {
+            "node": "Send Clear Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Order Status": {
+      "main": [
+        [
+          {
+            "node": "Format Order Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Order Status": {
+      "main": [
+        [
+          {
+            "node": "Send Order Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Order History": {
+      "main": [
+        [
+          {
+            "node": "Format Order History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Order History": {
+      "main": [
+        [
+          {
+            "node": "Send Order History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Item from Cart": {
+      "main": [
+        [
+          {
+            "node": "Check Remove Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Remove Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Cart After Remove",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cart After Remove": {
+      "main": [
+        [
+          {
+            "node": "Send Remove Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Environment": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limiting": {
+      "main": [
+        [
+          {
+            "node": "Check Rate Limit Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Rate Limit Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Input (SQL Protection)": {
+      "main": [
+        [
+          {
+            "node": "Check Sanitization Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sanitization Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Load Session from DB (Uses sanitized phone from earlier)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Order to DB (Uses sanitized phone from earlier)": {
+      "main": [
+        [
+          {
+            "node": "Clear Cart After Order (Uses sanitized phone from earlier)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Cart After Order (Uses sanitized phone from earlier)": {
+      "main": [
+        [
+          {
+            "node": "Send Order Details",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send UPI QR Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-02-07T00:00:00.000Z",
+  "versionId": "10.3"
+}

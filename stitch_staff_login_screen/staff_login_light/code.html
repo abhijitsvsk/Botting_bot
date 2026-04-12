@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Staff Authentication | Kinetic Engine</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#10B981",
+                        "surface-background": "#F8FAFC",
+                        "card-border": "#E2E8F0"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #F8FAFC;
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid #E2E8F0;
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            width: 480px;
+            height: 500px;
+        }
+        .blur-circle-emerald {
+            width: 600px;
+            height: 600px;
+            background: #10B981;
+            filter: blur(120px);
+            opacity: 0.10;
+            position: absolute;
+            top: -150px;
+            left: -150px;
+            z-index: 0;
+        }
+        .blur-circle-indigo {
+            width: 600px;
+            height: 600px;
+            background: #6366F1;
+            filter: blur(120px);
+            opacity: 0.08;
+            position: absolute;
+            bottom: -150px;
+            right: -150px;
+            z-index: 0;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .input-light {
+            background-color: #FFFFFF;
+            border-color: #E2E8F0;
+        }
+        .label-style {
+            color: #64748B;
+            font-size: 12px;
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen relative">
+<!-- Background Decorative Elements -->
+<div class="blur-circle-emerald"></div>
+<div class="blur-circle-indigo"></div>
+<main class="relative z-10 flex flex-col items-center gap-6">
+<!-- Auth Card -->
+<section class="glass-card flex flex-col items-center px-10 py-12 shadow-xl">
+<!-- Lock Icon -->
+<div class="w-16 h-16 rounded-full border border-slate-200 bg-white flex items-center justify-center mb-6 shadow-sm">
+<span class="material-symbols-outlined text-slate-700 text-3xl" data-icon="lock">lock</span>
+</div>
+<!-- Typography Header -->
+<div class="text-center mb-8">
+<h1 class="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">System Access</h1>
+<p class="text-[14px] text-slate-500 mt-1">Restricted to authorized staff only</p>
+</div>
+<!-- Form -->
+<form class="w-full flex flex-col gap-5">
+<!-- Email Field -->
+<div class="flex flex-col gap-1.5">
+<label class="label-style uppercase font-semibold">Email Address</label>
+<div class="relative">
+<input class="w-full h-[52px] px-4 rounded-[12px] input-light border text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none transition-all duration-200" placeholder="manager@kinetic.io" type="email"/>
+</div>
+</div>
+<!-- Password Field -->
+<div class="flex flex-col gap-1.5">
+<label class="label-style uppercase font-semibold">Password</label>
+<div class="relative">
+<input class="w-full h-[52px] px-4 pr-12 rounded-[12px] input-light border text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none transition-all duration-200" placeholder="••••••••" type="password"/>
+<button class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors" type="button">
+<span class="material-symbols-outlined" data-icon="visibility">visibility</span>
+</button>
+</div>
+</div>
+<!-- Submit Button -->
+<button class="w-full h-[52px] rounded-[12px] mt-2 bg-gradient-to-r from-[#10B981] to-[#059669] hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-white font-bold shadow-lg shadow-emerald-500/20" type="submit">
+<span class="material-symbols-outlined text-sm" data-icon="lock" style="font-variation-settings: 'FILL' 1;">lock</span>
+                    Sign In
+                </button>
+</form>
+</section>
+<!-- Footer Legend -->
+<footer class="text-center">
+<p class="text-[12px] text-slate-500 tracking-wide">Role-based access — Kitchen, Cashier, Manager, Owner</p>
+</footer>
+</main>
+<!-- Visual Identity Background Texture -->
+<div class="fixed inset-0 pointer-events-none opacity-[0.05] z-0">
+<div class="w-full h-full" data-alt="Subtle carbon fiber texture" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDGBKqJLHZy4Tlu59hWZp8g83KXtVzlEmqetMefXk22bE34kPCVq9-rgOtarJjfUqA0Ml8v0GmaaqbB2PMoo7MV3Xgw8KXWj3Wz45J4K4JaHLz6I7TMS1qFIXQQZVuuWdVRmaZej9SXDug0pCqhvPTz5nAfHyjJ4a2vHWpnv-s848iB8WoAfsWy38fracVSzV1_2vPpdRJl1Qa1r10DvOI6J0BWKauYhyvtTanc48vY2y_0QtXFreXmpiXS9-I7uSMj0yKaw61fY_kr');"></div>
+</div>
+</body></html>
