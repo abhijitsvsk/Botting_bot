@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { logAction } from '../auth';
 import { colors } from '../design-tokens';
+import * as Sentry from '@sentry/react';
 
 export default function Manager({ userRole }) {
   const [orders, setOrders] = useState([]);
@@ -112,6 +113,7 @@ export default function Manager({ userRole }) {
   };
 
   return (
+    <Sentry.ErrorBoundary fallback={<div className="p-4 bg-red-100 text-red-900 rounded">Manager Interface Crashed.</div>}>
     <div className="w-full h-full flex flex-col font-sans" style={{ backgroundColor: colors.bg.light }}>
       {/* Refund Modal */}
       {refundModal && (
@@ -296,5 +298,6 @@ export default function Manager({ userRole }) {
         )}
       </div>
     </div>
+    </Sentry.ErrorBoundary>
   );
 }

@@ -104,20 +104,36 @@ export default function Reports() {
     fetch();
   }, [range]);
 
-  const exportCSV = async () => {
-    const since = getRangeFilter();
-    const { data: rows } = await supabase.from('orders').select('*').gte('created_at', since);
-    const csv = [
-      ['order_id', 'phone', 'table', 'items', 'total', 'tax', 'status', 'source', 'created_at'],
-      ...(rows || []).map(r => [
-        r.order_id, r.phone, r.table_number,
-        JSON.stringify(r.items), r.total, r.tax_amount, r.status, r.source, r.created_at
-      ])
+  const exportOrdersCSV = async () => {
+    const { data: rows } = await supabase.from('orders').select('*');
+    const csv = [['order_id', 'phone', 'table', 'items', 'total', 'tax', 'status', 'source', 'created_at'],
+      ...(rows || []).map(r => [r.order_id, r.phone, r.table_number, `"${JSON.stringify(r.items).replace(/"/g, '""')}"`, r.total, r.tax_amount, r.status, r.source, r.created_at])
     ].map(row => row.join(',')).join('\n');
-
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `orders_${since}.csv`; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `orders_full.csv`; a.click();
+  };
+
+  const exportMenuCSV = async () => {
+    const { data: rows } = await supabase.from('menu_items').select('*');
+    const csv = [['item_code', 'name', 'price', 'category', 'available', 'times_ordered'],
+      ...(rows || []).map(r => [r.item_code, `"${(r.name || '').replace(/"/g, '""')}"`, r.price, r.category, r.available, r.times_ordered])
+    ].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `menu_catalog.csv`; a.click();
+  };
+
+  const exportFinancialsCSV = async () => {
+    const { data: orders } = await supabase.from('orders').select('*').in('status', ['completed', 'order_received', 'preparing', 'ready_for_pickup']);
+    const { data: refunds } = await supabase.from('refunds').select('*');
+    const csv = [['Type', 'Date', 'Amount', 'Tax', 'Net', 'Order_ID'],
+      ...(orders || []).map(r => ['Revenue', r.created_at, r.subtotal, r.tax_amount, r.total, r.order_id]),
+      ...(refunds || []).map(r => ['Refund', r.created_at, r.amount, 0, -r.amount, r.order_id])
+    ].map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `financial_ledger.csv`; a.click();
   };
 
   return (
@@ -142,9 +158,6 @@ export default function Reports() {
                 </button>
               ))}
             </div>
-            <button onClick={exportCSV} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 hover:text-[#6366F1] text-slate-700 rounded-[12px] text-[13px] font-bold uppercase shadow-sm transition-all group">
-              <span className="material-symbols-outlined text-[18px] group-hover:-translate-y-0.5 transition-transform">download</span> EXPORT CSV
-            </button>
           </div>
         </div>
 
@@ -225,6 +238,30 @@ export default function Reports() {
                      ))}
                      {data.taxGroups.length === 0 && <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">No Tax Data</span>}
                   </div>
+                </div>
+              </div>
+              {/* Data Portability Card */}
+              <div className="lg:col-span-5 bg-white rounded-[24px] p-6 lg:p-8 border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="material-symbols-outlined text-[24px] text-slate-800">archive</span>
+                  <h2 className="font-bold text-slate-800 text-xl tracking-tight">Data Portability Exports</h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <button onClick={exportOrdersCSV} className="flex flex-col items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 p-6 rounded-[16px] transition-all">
+                    <span className="material-symbols-outlined text-[28px] text-[#6366F1]">receipt_long</span>
+                    <span className="font-bold text-slate-800 tracking-tight">Export Orders</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Complete history</span>
+                  </button>
+                  <button onClick={exportMenuCSV} className="flex flex-col items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 p-6 rounded-[16px] transition-all">
+                    <span className="material-symbols-outlined text-[28px] text-emerald-500">restaurant_menu</span>
+                    <span className="font-bold text-slate-800 tracking-tight">Export Menu</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Database snapshot</span>
+                  </button>
+                  <button onClick={exportFinancialsCSV} className="flex flex-col items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 p-6 rounded-[16px] transition-all">
+                    <span className="material-symbols-outlined text-[28px] text-amber-500">account_balance</span>
+                    <span className="font-bold text-slate-800 tracking-tight">Export Financials</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ledger sequence</span>
+                  </button>
                 </div>
               </div>
             </div>

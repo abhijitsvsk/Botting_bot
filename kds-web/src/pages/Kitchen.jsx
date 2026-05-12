@@ -1,6 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabase';
 import { colors } from '../design-tokens';
+import * as Sentry from '@sentry/react';
+
+// Connectivity states for the ISP block banner
+// 'ok'      — proxy working, no banner shown
+// 'warning' — proxy unreachable but orders still arriving via fallback  
+// 'error'   — completely unreachable, showing cached orders only
+const CONN_OK = 'ok';
+const CONN_WARNING = 'warning';
+const CONN_ERROR = 'error';
 
 // ── Demo/Fake orders for offline testing ──────────────────────────────────────
 const DEMO_ORDERS = [
@@ -111,6 +120,49 @@ export default function Kitchen() {
   const [station, setStation] = useState(new URLSearchParams(window.location.search).get('station') || 'all');
   const [lastSyncTime, setLastSyncTime] = useState(Date.now());
   const [deviceWarning, setDeviceWarning] = useState(null);
+  // ISP block connectivity banner state
+  const [connStatus, setConnStatus] = useState(CONN_OK);
+
+  // ── ISP Block Connectivity Check ─────────────────────────────────────────
+  // Runs once on mount. Checks if the Cloudflare proxy is working.
+  // Sets a visible banner if the proxy is down — readable from 3 metres.
+  useEffect(() => {
+    const proxyUrl = import.meta.env.VITE_SUPABASE_PROXY_URL;
+    const directUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!proxyUrl) return; // No proxy configured — running in direct/dev mode, no banner needed
+
+    const check = async () => {
+      try {
+        const res = await fetch(`${proxyUrl}/rest/v1/`, {
+          method: 'HEAD',
+          headers: { 'apikey': anonKey },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.ok || res.status === 404) {
+          setConnStatus(CONN_OK); // Proxy healthy — no banner
+          return;
+        }
+      } catch (_) {
+        // Proxy failed — check if direct connection works (orders still arriving via fallback)
+        try {
+          await fetch(`${directUrl}/rest/v1/`, {
+            method: 'HEAD',
+            headers: { 'apikey': anonKey },
+            signal: AbortSignal.timeout(5000),
+          });
+          // Direct works — proxy issue only, orders still arriving
+          setConnStatus(CONN_WARNING);
+        } catch (_2) {
+          // Nothing works — total connectivity loss
+          setConnStatus(CONN_ERROR);
+        }
+      }
+    };
+
+    check();
+  }, []);
 
   useEffect(() => {
     const checkCredentials = async () => {
@@ -373,9 +425,31 @@ export default function Kitchen() {
   }
 
   return (
+    <Sentry.ErrorBoundary fallback={<div className="p-4 bg-red-100 text-red-900 rounded">Kitchen Interface Crashed. Reloading...</div>}>
     <div className="h-screen overflow-hidden flex flex-col font-sans" style={{ backgroundColor: colors.bg.dark }}>
       <audio ref={audioRef} src="https://actions.google.com/sounds/v1/alarms/ding.ogg" preload="auto" />
-      
+
+      {/* ── ISP Block Detection Banner ─────────────────────────────────────────
+           Large text (readable from 3m), full width, high contrast.
+           Yellow = proxy issue but orders still arriving.
+           Red    = total connectivity loss, showing cached orders only. */}
+      {connStatus === CONN_WARNING && (
+        <div className="w-full px-6 py-4 flex items-center gap-4 shrink-0" style={{ backgroundColor: '#92400e' }}>
+          <span className="material-symbols-outlined text-yellow-200 text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
+          <span className="text-yellow-100 font-black text-2xl tracking-tight">
+            ⚠ Network proxy issue detected. Contact your system administrator. Orders are still arriving.
+          </span>
+        </div>
+      )}
+      {connStatus === CONN_ERROR && (
+        <div className="w-full px-6 py-4 flex items-center gap-4 shrink-0" style={{ backgroundColor: '#7f1d1d' }}>
+          <span className="material-symbols-outlined text-red-200 text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>signal_wifi_off</span>
+          <span className="text-red-100 font-black text-2xl tracking-tight">
+            ✗ Cannot reach database. Check internet connection. Last known orders shown below.
+          </span>
+        </div>
+      )}
+
       {/* Top Navigation Bar */}
       <header className="w-full h-[64px] border-b px-6 flex items-center justify-between z-50 shrink-0" style={{ backgroundColor: colors.bg.cardDark, borderColor: '#21262D' }}>
         <div className="flex items-center gap-3">
@@ -520,5 +594,6 @@ export default function Kitchen() {
         )}
       </main>
     </div>
+    </Sentry.ErrorBoundary>
   );
 }

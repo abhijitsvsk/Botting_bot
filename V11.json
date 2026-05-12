@@ -1,0 +1,3761 @@
+{
+  "id": "WXtzFB4sV7Qjlhhk",
+  "name": "WhatsApp Restaurant Bot - V10 FINAL WIRED DEMO",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "options": {}
+      },
+      "id": "4cd26f75-7453-493d-b6ba-1dd34d93dfcc",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        128,
+        528
+      ],
+      "webhookId": "whatsapp-bot"
+    },
+    {
+      "parameters": {
+        "jsCode": "const required = ['WHATSAPP_PHONE_ID', 'UPI_ID', 'RESTAURANT_NAME', 'MAX_TABLES', 'TAX_RATE', 'WHATSAPP_APP_SECRET', 'GROQ_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_PHONE', 'KITCHEN_PHONE', 'SUPPORT_EMAIL', 'SUPPORT_PHONE', 'OPENING_TIME', 'CLOSING_TIME', 'TIMEZONE', 'ALLERGEN_KEYWORDS', 'PRIVACY_POLICY_VERSION', 'OPENING_TIME', 'CLOSING_TIME', 'TIMEZONE', 'ALLERGEN_KEYWORDS', 'PRIVACY_POLICY_VERSION', 'OPENING_TIME', 'CLOSING_TIME', 'TIMEZONE', 'ALLERGEN_KEYWORDS', 'PRIVACY_POLICY_VERSION'];\nconst missing = required.filter(v => !$env[v]);\nif (missing.length > 0) throw new Error(`Missing env vars: ${missing.join(', ')}`);\nconst taxRate = parseFloat($('Get Restaurant Config').item.json.tax_rate);\nif (isNaN(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('TAX_RATE must be 0-100');\nconst maxTables = parseInt($env.MAX_TABLES);\nif (isNaN(maxTables) || maxTables < 1) throw new Error('MAX_TABLES must be positive');\n\nconst crypto = require('crypto');\n// Verify WhatsApp Webhook Signature\ntry {\n  const secret = $env.WHATSAPP_APP_SECRET || '';\n  const headers = $request?.headers || {};\n  const signature = headers['x-hub-signature-256'];\n  \n  if (signature && secret) {\n      const payloadStr = JSON.stringify($input.item.json);\n      const expectedSig = 'sha256=' + crypto.createHmac('sha256', secret).update(payloadStr).digest('hex');\n      \n      if (signature !== expectedSig) {\n          console.log('HMAC Error - Expected:', expectedSig, 'Got:', signature);\n          throw new Error('Invalid Signature / Unauthorized Webhook Request');\n      }\n  }\n} catch (e) {\n  throw new Error('Validation failed: ' + e.message);\n}\n\nconst entry = $input.item.json.entry?.[0];\nif (!entry?.changes?.[0]?.value) throw new Error('Invalid webhook payload');\nreturn $input.item.json;"
+      },
+      "id": "a3d42029-31d6-4e95-b97e-b02412c17602",
+      "name": "Validate Environment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "from",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "raw_text",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "button_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "list_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.list_reply?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "message_id",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "contact_name",
+              "value": "={{ $json.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.profile?.name || 'Guest' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0ec708e0-6fe1-4834-b979-d1600e08678b",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        336,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const message = $input.item.json.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [{json: $input.item.json}];\n\nconst phone = (message.from || '').toString();\nconst phoneRegex = /^[+0-9-]+$/;\nif (!phoneRegex.test(phone)) {\n    return [{json: {...$input.item.json, error: 'INVALID_PHONE', error_msg: 'Invalid phone format'}}];\n}\n\nif (phone.length > 20) {\n    return [{json: {...$input.item.json, error: 'PHONE_TOO_LONG', error_msg: 'Phone too long'}}];\n}\n\nlet action = '';\nlet raw = '';\nif (message.type === 'interactive') {\n    action = (message.interactive?.button_reply?.id || message.interactive?.list_reply?.id || '').toUpperCase();\n} else if (message.type === 'text') {\n    raw = (message.text?.body || '').toUpperCase();\n}\n\nlet text = raw.replace(/[^A-Z0-9_]/g, ' ').replace(/ +/g, ' ').trim();\n\n// Minimal targeted fix: If it's the privacy agreement button, we inject a \"Hi\" to keep the flow moving naturally\nif (action === 'CMD_AGREE_PRIVACY') {\n    text = 'HI';\n}\n\nreturn [{json: {...$input.item.json, text, action, phone, timestamp: Date.now()}}];"
+      },
+      "id": "36c13fcf-0dc3-4add-9328-da8379eeb9a7",
+      "name": "Sanitize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cdb9dc79-ad85-4f58-8001-dcc525e5a906",
+      "name": "Check Sanitization Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        528,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"messaging_product\": \"whatsapp\", \"to\": $json.from, \"type\": \"text\", \"text\": { \"body\": $json.error_msg || 'An error occurred. Please try again.' } } }}",
+        "options": {}
+      },
+      "id": "aac4915e-42e7-4329-a592-36710bfd4abb",
+      "name": "Send Error Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT phone, table_number, cart, customer_name, last_seen, preferences, session_started, total_orders FROM user_sessions WHERE phone = $1 ORDER BY last_seen DESC LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "b20c1e83-1e74-4ccc-88c8-5b052f2c70cb",
+      "name": "Load Session from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        736,
+        528
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (!items || items.length < 2) throw new Error('Missing input data for session processing');\nconst inputData = items.find(i => i.json.from) || items[0];\nconst dbResult = items.find(i => i.json.phone) || {};\nconst phone = inputData.json.from;\nconst now = Date.now();\nlet session = {phone, table_number: null, cart: [], customer_name: inputData.json.contact_name, last_seen: now, session_started: now, total_orders: 0, preferences: {}};\nif (dbResult.json && dbResult.json.phone) {\n  let cart = [];\n  let preferences = {};\n  try { cart = JSON.parse(dbResult.json.cart || '[]'); if (!Array.isArray(cart)) cart = []; } catch (e) { cart = []; }\n  try { preferences = JSON.parse(dbResult.json.preferences || '{}'); if (typeof preferences !== 'object') preferences = {}; } catch (e) { preferences = {}; }\n  const lastSeen = new Date(dbResult.json.last_seen).getTime();\n  const expired = isNaN(lastSeen) || (now - lastSeen) > 900000;\n  if (!expired) {\n    session = {...dbResult.json, cart, preferences, last_seen: now};\n  } else {\n    session.total_orders = dbResult.json.total_orders || 0;\n  }\n}\nsession.is_returning = (dbResult.json && parseInt(dbResult.json.total_orders) > 0);\nreturn [{json: {...inputData.json, session, is_new_session: !dbResult.json || !dbResult.json.phone}}];"
+      },
+      "id": "fa800a48-32b0-458e-811b-88b723f07401",
+      "name": "Process Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_sessions (phone, table_number, cart, customer_name, last_seen, preferences, session_started) VALUES ($1, $2, $3::jsonb, $4, NOW(), $5::jsonb, to_timestamp($6/1000)) ON CONFLICT (phone) DO UPDATE SET table_number = EXCLUDED.table_number, cart = EXCLUDED.cart, customer_name = EXCLUDED.customer_name, last_seen = NOW(), preferences = EXCLUDED.preferences RETURNING *\nDO UPDATE SET last_inbound_at = NOW();\nDO UPDATE SET last_inbound_at = NOW();",
+        "options": {
+          "queryReplacement": "={{ $json.session.phone }},={{ $json.session.table_number }},={{ JSON.stringify($json.session.cart) }},={{ $json.session.customer_name }},={{ JSON.stringify($json.session.preferences) }},={{ $json.session.session_started }}"
+        }
+      },
+      "id": "ea54e68a-c167-426b-a275-7a4a103cb9bb",
+      "name": "Save Session to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        928,
+        528
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.session.table_number }}",
+              "operation": "isEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "365f2599-f767-4642-b49b-8b5790f377e9",
+      "name": "Check Table Set",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"🍽️ Welcome to {{ $env.RESTAURANT_NAME }}!\\n\\n👋 Hi {{ $json.contact_name }}! {{ $json.session.is_returning ? 'Welcome back! Ready for your usual?' : '' }}\\n\\nPlease enter your table number (1-{{ $env.MAX_TABLES }})\\n\\nExample: Table 5 or just 5\"}}",
+        "options": {}
+      },
+      "id": "316e2fef-decd-46ab-826a-07b49096d115",
+      "name": "Ask Table Number",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1136,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = ($input.item.json.text || '').toString();\nconst tableMatch = text.match(/\\d+/);\nif (!tableMatch) return [{json: {...$input.item.json, error: 'INVALID_TABLE', error_msg: `❌ Please enter a valid table number (1-${$env.MAX_TABLES})\\n\\nExample: 'Table 5' or just '5'`}}];\nconst tableNum = parseInt(tableMatch[0]);\nif (isNaN(tableNum)) return [{json: {...$input.item.json, error: 'INVALID_TABLE', error_msg: '❌ Table number must be a valid number'}}];\nconst maxTables = parseInt($env.MAX_TABLES || '200');\nif (tableNum < 1 || tableNum > maxTables) return [{json: {...$input.item.json, error: 'TABLE_OUT_OF_RANGE', error_msg: `❌ Table number must be between 1 and ${maxTables}`}}];\nreturn [{json: {...$input.item.json, table_number: tableNum}}];"
+      },
+      "id": "f081f0c4-9cbb-465f-8bb1-fdd646562358",
+      "name": "Parse & Validate Table",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3f1911ec-1235-4343-bb2e-cec746c8efc7",
+      "name": "Check Table Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $input.item.json.session || {};\nsession.table_number = $input.item.json.table_number;\nreturn [{json: {...$input.item.json, session}}];"
+      },
+      "id": "74606610-72bb-4cf8-a5ad-897d5a0c6404",
+      "name": "Update Session Table",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE user_sessions SET table_number = $1, last_seen = NOW() WHERE phone = $2 RETURNING *",
+        "options": {
+          "queryReplacement": "={{ $json.session.table_number }},={{ $json.from }}"
+        }
+      },
+      "id": "dacb5c70-6639-493d-ac24-e9e3165ad298",
+      "name": "Save Table to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1632,
+        384
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"✅ Table {{ $json.session.table_number }} confirmed!\\n\\nType MENU to see our menu\"}}",
+        "options": {}
+      },
+      "id": "42935335-74f4-4648-b56c-e55197e55e73",
+      "name": "Confirm Table",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1728,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression"
+      },
+      "id": "905b0d72-57b7-4979-a618-0171dafed28f",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1136,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT code, name, category, price, description, is_available FROM menu_items WHERE is_available = true ORDER BY category, code",
+        "options": {}
+      },
+      "id": "9001c688-5914-447b-a002-bc68e1f68cce",
+      "name": "Get Menu from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1328,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst inputData = $input.first().json;\nconst menuItems = $input.all().slice(1);\nif (!menuItems || menuItems.length === 0) return [{json: {...inputData, error: 'NO_MENU', error_msg: '❌ Menu not available'}}];\n\nlet rows = [];\nmenuItems.forEach(item => {\n    rows.push({\n        id: \"CMD_ADD_\" + item.json.code, \n        title: item.json.name.substring(0, 24), \n        description: ('₹' + item.json.price + ' - ' + item.json.category).substring(0, 72)\n    });\n});\n\nrows = rows.slice(0, 10); // WA Limit\n\nconst interactive = {\n    type: \"list\",\n    header: {type: \"text\", text: \"📋 Live Menu\"},\n    body: {text: \"Select an item to add to your cart or type your order.\\nExample: '2 B1s and a D2'\"},\n    action: {\n        button: \"View Items\",\n        sections: [{title: \"Popular Items\", rows}]\n    }\n};\n\nreturn [{json: {...inputData, interactive}}];\n"
+      },
+      "id": "148aced3-2428-4f97-b212-52dd2ab38a1e",
+      "name": "Format Menu",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"interactive\", \"interactive\": {{ JSON.stringify($json.interactive) }}}",
+        "options": {}
+      },
+      "id": "8437a8b9-e5a3-4554-a869-23c637e8ae51",
+      "name": "Send Menu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1536,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": \"llama3-70b-8192\", \"messages\": [{\"role\": \"system\", \"content\": \"You extract food item codes and quantities from user orders. Here is the LIVE MENU DATABASE: {{ JSON.stringify($input.all().map(i => i.json)) }}. Return ONLY a valid JSON array of objects. Example: [{\\\"code\\\": \\\"B1\\\", \\\"quantity\\\": 2}]. Map their natural language requests perfectly to the menu codes. If they ask for an item that is is_available: false, STILL output its code.\"}, {\"role\": \"user\", \"content\": \"{{ $('Sanitize Input').item.json.text || $('Sanitize Input').item.json.action }}\"}], \"temperature\": 0}",
+        "options": {}
+      },
+      "id": "a84f36ad-0577-4dfc-a409-d2f953b13d2e",
+      "name": "Groq AI Parser",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst data = $input.item.json;\nlet parsed_items = [];\ntry {\n    const content = data.choices[0].message.content;\n    const arrayMatch = content.match(/\\[.*\\]/s);\n    if (arrayMatch) {\n       parsed_items = JSON.parse(arrayMatch[0]);\n    } else {\n       parsed_items = JSON.parse(content);\n    }\n} catch (e) {\n    return [{json: {...data, error: 'AI_PARSE_ERROR', error_msg: '❌ We had trouble understanding your order.\\n\\nTry sending codes like: B10, A5'}}];\n}\n\nif (!Array.isArray(parsed_items) || parsed_items.length === 0) {\n    return [{json: {...data, error: 'NO_ITEMS', error_msg: '❌ No items found in your message.\\n\\nTry sending codes like: B10, A5'}}];\n}\n\nparsed_items = parsed_items.map(i => ({...i, quantity: parseInt(i.quantity) || 1}));\n\nreturn [{json: {...data, parsed_items}}];\n"
+      },
+      "id": "debcd788-c503-4c89-8fcc-fbcc27732ff6",
+      "name": "Extract Groq Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "840c8ffa-7b8e-496f-a41d-f37fdb2270ac",
+      "name": "Check Parse Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT code, name, price, category, is_available FROM menu_items WHERE code = ANY($1::text[])",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.parsed_items.map(i => i.code)) }}"
+        }
+      },
+      "id": "1581c475-9080-4689-8938-6e99839b293f",
+      "name": "Lookup Items in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1632,
+        784
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst inputData = $('Extract Groq Output').first().json;\nconst parsed_items = inputData.parsed_items || [];\nconst dbItems = $input.all().map(i => i.json);\n\nif (!dbItems || dbItems.length === 0) return [{json: {...inputData, error: 'ITEMS_NOT_FOUND', error_msg: '❌ No valid items found\\n\\nType MENU to see available items'}}];\n\nconst session = inputData.session || {};\nconst cart = session.cart || [];\nlet outOfStock = [];\nlet itemsAdded = [];\n\ndbItems.forEach(dbItem => {\n  const requested = parsed_items.find(pi => pi.code === dbItem.code);\n  const qty = requested ? requested.quantity : 1;\n  \n  if (!dbItem.is_available) {\n     outOfStock.push(dbItem.name);\n  } else {\n     itemsAdded.push(qty + \"x \" + dbItem.name);\n     const existing = cart.find(c => c.code === dbItem.code);\n     if (existing) { existing.quantity += qty; } else {\n        cart.push({...dbItem, quantity: qty, id: Date.now() + Math.random()});\n     }\n  }\n});\n\nsession.cart = cart;\n\nif (itemsAdded.length === 0 && outOfStock.length > 0) {\n    return [{json: {...inputData, error: 'ALL_OUT_OF_STOCK', error_msg: '⚠️ Sorry, everything you requested (' + outOfStock.join(', ') + ') is currently sold out.'}}];\n}\n\nconst subtotal = cart.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);\nconst taxRate = parseFloat($('Get Restaurant Config').item.json.tax_rate || '0') / 100;\nconst tax = Math.round(subtotal * taxRate);\nconst total = subtotal + tax;\n\nreturn [{json: {...inputData, session, cart, subtotal, tax, total, items_added: itemsAdded, out_of_stock: outOfStock}}];\n"
+      },
+      "id": "beb07013-4799-4291-9a33-a91e2f7e9acf",
+      "name": "Add to Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nBEGIN;\nSELECT pg_advisory_xact_lock(hashtext($1::text));\nUPDATE user_sessions SET cart = $1::jsonb, last_seen = NOW() WHERE phone = $2 RETURNING *\nCOMMIT;",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.session.cart) }},={{ $json.from }}"
+        }
+      },
+      "id": "9c4096c6-cd9f-4665-bf28-d4d22cbd2d97",
+      "name": "Update Cart in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1840,
+        784
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"✅ Added to cart:\\n{{ $json.items_added.join('\\\\n') }}\\n{{ $json.out_of_stock.length > 0 ? '\\\\n⚠️ SOLD OUT (Not Added):\\\\n- ' + $json.out_of_stock.join('\\\\n- ') + '\\\\n' : '' }}\\n🛒 Total: ₹{{ $json.total }}\\n\\nType CART to review or send more items\"}}",
+        "options": {}
+      },
+      "id": "ec0ba377-0bae-4141-bf42-25887d7331ef",
+      "name": "Confirm Items Added",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1936,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $input.item.json.session || {};\nconst cart = session.cart || [];\nif (cart.length === 0) return [{json: {...$input.item.json, error: 'EMPTY_CART', error_msg: '🛒 Your cart is empty\\n\\nType MENU to start ordering'}}];\nconst subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);\nconst taxRate = parseFloat($('Get Restaurant Config').item.json.tax_rate || '0') / 100;\nconst tax = Math.round(subtotal * taxRate);\nconst total = subtotal + tax;\nlet cartText = '🛒 *YOUR CART*\\n\\n';\ncart.forEach((item, idx) => {\n  cartText += `${idx + 1}. ${item.name} x${item.quantity} = ₹${item.price * item.quantity}\\n`;\n});\ncartText += `\\n━━━━━━━━━━\\nSubtotal: ₹${subtotal}\\nTax (${$('Get Restaurant Config').item.json.tax_rate}%): ₹${tax}\\n*Total: ₹${total}*\\n━━━━━━━━━━`;\nreturn [{json: {...$input.item.json, cart_text: cartText, subtotal, tax, total}}];"
+      },
+      "id": "2c5d4e8a-20d6-4dae-8a36-c7829f5c7161",
+      "name": "Format Cart",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d1f37f19-45b1-4e14-8b72-bb218f81f55e",
+      "name": "Check Cart Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"interactive\", \"interactive\": {\"type\": \"button\", \"body\": {\"text\": \"{{ $json.cart_text }}\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"confirm\", \"title\": \"✅ Confirm Order\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"menu\", \"title\": \"➕ Add More\"}}]}}}",
+        "options": {}
+      },
+      "id": "ccfb9dfe-dc7f-4f3e-a421-966a6820d91a",
+      "name": "Send Cart with Actions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1632,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $input.item.json.session || {};\nconst cart = session.cart || [];\nif (cart.length === 0) return [{json: {...$input.item.json, error: 'EMPTY_CART', error_msg: '🛒 Cart is empty. Add items first.'}}];\nif (!session.table_number) return [{json: {...$input.item.json, error: 'NO_TABLE', error_msg: '❌ Table number not set. Please set your table first.'}}];\nconst subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);\nconst taxRate = parseFloat($('Get Restaurant Config').item.json.tax_rate || '0') / 100;\nconst tax = Math.round(subtotal * taxRate);\nconst total = subtotal + tax;\nconst orderId = `ORD${Date.now()}`;\nconst order = {order_id: orderId, table_number: session.table_number, items: cart, subtotal, tax, total, phone: $input.item.json.from, customer_name: session.customer_name};\nconst upiString = `upi://pay?pa=${$env.UPI_ID}&pn=${encodeURIComponent($env.RESTAURANT_NAME)}&am=${total}&cu=INR&tn=Order%20${orderId}`;\nreturn [{json: {...$input.item.json, order, upi_string: upiString}}];"
+      },
+      "id": "30d3c481-aa84-4ee0-9aee-62569c916316",
+      "name": "Prepare Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d9f94943-ee27-486f-b648-951cdf2d0251",
+      "name": "Check Order Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO orders (order_id, table_number, phone, customer_name, items, subtotal, tax, total, status, upi_string, created_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, NOW()) RETURNING *",
+        "options": {
+          "queryReplacement": "={{ $json.order.order_id }},={{ $json.order.table_number }},={{ $json.from }},={{ $json.order.customer_name }},={{ JSON.stringify($json.order.items) }},={{ $json.order.subtotal }},={{ $json.order.tax }},={{ $json.order.total }},order_received,={{ $json.upi_string }}"
+        }
+      },
+      "id": "3991ad80-46c8-444d-8223-e3102801a9fe",
+      "name": "Save Order to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1632,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nBEGIN;\nSELECT pg_advisory_xact_lock(hashtext($1::text));\nUPDATE user_sessions SET cart = '[]'::jsonb, total_orders = total_orders + 1, last_seen = NOW() WHERE phone = $1 RETURNING *\nCOMMIT;",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "aa74a94b-3788-40c0-842b-29eff087e0b7",
+      "name": "Clear Cart After Order",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1728,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"interactive\", \"interactive\": {\"type\": \"button\", \"body\": {\"text\": \"✅ *ORDER CREATED!*\\n\\n📋 Order ID: {{ $json.order.order_id }}\\n🪑 Table: {{ $json.order.table_number }}\\n💰 Total: ₹{{ $json.order.total }}\\n\\n━━━━━━━━━\\n💳 *PAYMENT REQUIRED*\\n━━━━━━━━━\\n\\nPlease pay at the counter and show this order ID to staff.\\n\\n⚠️ Order prepared ONLY after payment.\\n📞 Support: {{ $env.SUPPORT_PHONE }}\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"CANCEL\", \"title\": \"❌ Cancel Order\"}}]}}}",
+        "options": {}
+      },
+      "id": "ae3e8522-0ff7-4a7d-b6e6-e75bf9186115",
+      "name": "Send Order Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1840,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"💡 *HELP - Available Commands*\\n\\n📋 MENU - View full menu\\n🛒 CART - View your cart\\n✅ CONFIRM - Place order\\n❓ HELP - Show this help\\n\\n*How to order:*\\n1. Type MENU\\n2. Send item codes (e.g., B10 A5)\\n3. Type CART to review\\n4. Type CONFIRM to place order\\n5. Pay at counter with order ID\\n\\n📞 Support: {{ $env.SUPPORT_EMAIL }}\"}}",
+        "options": {}
+      },
+      "id": "fd669a74-4f7d-4f6e-b690-5444f6a971c4",
+      "name": "Send Help",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        976
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "2fa4f6ec-0a69-4717-a156-7669e911c156",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        128,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.execution.error.message ? $json.execution.error.message.split('||')[1] || $env.SUPPORT_PHONE : $env.SUPPORT_PHONE }}\", \"type\": \"text\", \"text\": {\"body\": \"⚠️ Our highly trained monkeys encountered a technical issue! Please try again or contact support.\"}}",
+        "options": {}
+      },
+      "id": "3def9bb2-a10b-4065-acd5-db15d8d773e0",
+      "name": "Send Global Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        336,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT code, name, is_available FROM menu_items",
+        "options": {}
+      },
+      "id": "2b00cb9a-8b2a-4377-a363-09d32e3e5225",
+      "name": "Get Menu for AI context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1232,
+        784
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.error }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c957ea5c-4aa8-4884-b270-8eaad4a474d6",
+      "name": "Check Add Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "manager-sync",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "63cf2950-2cfa-46ee-8b06-3a7e8a9c0f0d",
+      "name": "Manager Trigger (Sheets)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        128,
+        -80
+      ],
+      "webhookId": "sync-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO menu_items (code, name, category, price, description, is_available) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, category = EXCLUDED.category, price = EXCLUDED.price, description = EXCLUDED.description, is_available = EXCLUDED.is_available",
+        "options": {
+          "queryReplacement": "={{ $json.code }},={{ $json.name }},={{ $json.category }},={{ $json.price }},={{ $json.description }},={{ $json.is_available === 'TRUE' || $json.is_available === true }}"
+        }
+      },
+      "id": "07e43cca-a33c-466a-a8f1-3aba13634931",
+      "name": "Sync to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        528,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Sync Successful!",
+        "options": {}
+      },
+      "id": "9a5d4063-a177-4078-a326-48207677c623",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        736,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT order_id, status, created_at FROM orders WHERE phone = $1 AND status = 'order_received' AND created_at >= NOW() - INTERVAL '5 minutes' ORDER BY created_at DESC LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "28bc19a9-7f9e-4639-963b-2968aedbe479",
+      "name": "Check Cancel Eligibility",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1232,
+        1120
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.order_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b8b41cd8-3cb2-4952-a1c6-e8d64ba931bb",
+      "name": "If Cancel Eligible",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('Route Action').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"❌ We couldn't find a recent order that can be cancelled.\\n\\nIf your order is already being prepared, please speak to the restaurant staff.\"}}",
+        "options": {}
+      },
+      "id": "80fdfedf-5cca-4d3a-bbc5-77790f10830c",
+      "name": "Send Cancel Fail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1632,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE orders SET status = 'cancelled' WHERE order_id = $1 RETURNING *",
+        "options": {
+          "queryReplacement": "={{ $json.order_id }}"
+        }
+      },
+      "id": "e38a6d59-4451-4dfa-97cc-c866acf2573f",
+      "name": "Execute Cancel in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1632,
+        1120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('Route Action').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"✅ Your order {{ $json.order_id }} has been successfully cancelled!\"}}",
+        "options": {}
+      },
+      "id": "c650f6e3-aeec-4b7b-a718-6ee38e3f8f24",
+      "name": "Send Cancel Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1840,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst cart = $json.session.cart || [];\nif (cart.length === 0) {\n   return [{json: {...$json, empty_cart: true}}];\n}\nconst subtotal = cart.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);\nconst taxRate = parseFloat($('Get Restaurant Config').item.json.tax_rate || '0') / 100;\nconst tax = Math.round(subtotal * taxRate);\nconst total = subtotal + tax;\nreturn [{json: {...$json, subtotal, tax, total}}];\n"
+      },
+      "id": "b96cbdff-75e1-4013-ad6c-e90aa710d102",
+      "name": "Format Cart Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.empty_cart }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c6a32d10-293c-4053-ba88-ae9d12c73357",
+      "name": "If Empty Cart",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"🛒 Your cart is currently empty! Send MENU to see what we have.\"}}",
+        "options": {}
+      },
+      "id": "a8da971f-9e91-4085-88d8-2b6c134fe2a3",
+      "name": "Send Empty Cart",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2336,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"interactive\", \"interactive\": {\"type\": \"button\", \"body\": {\"text\": \"🛒 *REVIEW YOUR CART*\\n\\n{{ $json.session.cart.map(c => c.quantity + 'x ' + c.name).join('\\\\n') }}\\n\\nSubtotal: ₹{{ $json.subtotal }}\\nTax: ₹{{ $json.tax }}\\n*Total: ₹{{ $json.total }}*\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"CMD_CONFIRM\", \"title\": \"✅ Confirm\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"CMD_CUSTOMISE\", \"title\": \"📝 Customise More\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"CMD_CLEAR_CART\", \"title\": \"🗑️ Clear Cart\"}}]}}}",
+        "options": {}
+      },
+      "id": "efa8b3a8-a152-4133-bba7-1aedb2959a6c",
+      "name": "Send Cart Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2336,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nBEGIN;\nSELECT pg_advisory_xact_lock(hashtext($1::text));\nUPDATE user_sessions SET cart = '[]'::jsonb WHERE phone = $1 RETURNING *\nCOMMIT;",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "bb73743a-4c2b-4fcb-b209-65c8bf16df17",
+      "name": "Execute Clear Cart",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2128,
+        832
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('Route Action').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"🗑️ Your cart has been cleared! Send MENU to start over.\"}}",
+        "options": {}
+      },
+      "id": "48149afc-bf94-4682-97a0-2c21c3afce32",
+      "name": "Send Clear Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2336,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('Route Action').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"📝 Great! Type out what else you'd like to add or remove.\"}}",
+        "options": {}
+      },
+      "id": "5e031850-9e07-4d3a-9d8b-8fded249a9c0",
+      "name": "Send Customise Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2128,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nSELECT \n  (NOW() AT TIME ZONE $1)::TIME >= $2::TIME AND \n  (NOW() AT TIME ZONE $1)::TIME < $3::TIME AS is_open\n        ",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "parameter": "$1",
+                "value": "={{ $env.TIMEZONE }}"
+              },
+              {
+                "parameter": "$2",
+                "value": "={{ $env.OPENING_TIME }}"
+              },
+              {
+                "parameter": "$3",
+                "value": "={{ $env.CLOSING_TIME }}"
+              }
+            ]
+          },
+          "queryReplacement": "={{ $env.TIMEZONE }},{{ $env.OPENING_TIME }},{{ $env.CLOSING_TIME }}"
+        },
+        "alwaysOutputData": true
+      },
+      "id": "99194073-2402-4880-8707-8206b8fdada6",
+      "name": "Check Operating Hours",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        928,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.kitchen_is_open }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a5243282-b396-4f46-9066-9e68982fffab",
+      "name": "If Kitchen Closed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"🕐 We're currently closed.\\n\\nWe're open {{ $('Get Restaurant Config').item.json.opening_time }} – {{ $('Get Restaurant Config').item.json.closing_time }} ({{ $('Get Restaurant Config').item.json.timezone }}).\\n\\nFeel free to browse our menu when we reopen! Send MENU anytime.\"}}",
+        "options": {}
+      },
+      "id": "15556176-54e3-4174-a086-ad841947f32e",
+      "name": "Send Closed Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        688,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst from = $json.from;\n// Check if consent record exists BEFORE touching user_sessions\nreturn [{ json: { ...$json, _consent_check_phone: from } }];\n"
+      },
+      "id": "82270afc-5b4f-4389-a5b5-c4c879248bf7",
+      "name": "GDPR Consent Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT consent_given_at, opt_out, policy_version FROM user_sessions WHERE phone = $1 LIMIT 1",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "56e5c99d-4bec-44da-bbe2-53ab8744378e",
+      "name": "Check Consent DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1040,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.consent_given_at }}",
+              "operator": {
+                "type": "string",
+                "operation": "isEmpty"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ace1b02c-ebd4-4fa5-9741-13f780c7c6eb",
+      "name": "If Needs Consent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('GDPR Consent Prepare').item.json.from }}\", \"type\": \"interactive\", \"interactive\": {\"type\": \"button\", \"body\": {\"text\": \"👋 Welcome to {{ $env.RESTAURANT_NAME }}!\\n\\nBefore you order, we need your consent to store your phone number and order details to process your request.\\n\\n📋 We store: phone number, orders placed, table number.\\n❌ We never share your data with third parties.\\n🗑️ Text DELETE MY DATA anytime to erase your information.\\n\\nBy tapping Agree you consent to our data policy (v{{ $env.PRIVACY_POLICY_VERSION }}).\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"CMD_GDPR_AGREE\", \"title\": \"✅ I Agree\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"CMD_GDPR_DECLINE\", \"title\": \"❌ No Thanks\"}}]}}}",
+        "options": {}
+      },
+      "id": "fdc1daa9-8154-4f9e-bfcb-07e3705ae09e",
+      "name": "Send Consent Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO user_sessions (phone, consent_given_at, policy_version, cart)\n                VALUES ($1, NOW(), $2, '[]'::jsonb)\n                ON CONFLICT (phone) DO UPDATE\n                SET consent_given_at = NOW(), policy_version = $2\nDO UPDATE SET last_inbound_at = NOW();",
+        "options": {
+          "queryReplacement": "={{ $('GDPR Consent Prepare').item.json.from }},={{ $env.PRIVACY_POLICY_VERSION }}"
+        }
+      },
+      "id": "c04720c9-2829-4e1e-ba01-8855a1b5bf68",
+      "name": "Write Consent to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1632,
+        384
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('GDPR Consent Prepare').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"No problem! We haven't stored any of your data. You won't be able to use the ordering system without consent. Feel free to come back anytime if you change your mind. 🙂\"}}",
+        "options": {}
+      },
+      "id": "ff45a224-d652-4ae7-9049-73904d3fa16d",
+      "name": "Send Consent Declined",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst text = ($json.text || '').toLowerCase();\nconst keywords = ($('Get Restaurant Config').item.json.allergen_keywords || 'nut,peanut,gluten,dairy,egg,shellfish,soy,wheat,sesame,fish').split(',');\nconst found = keywords.filter(k => text.includes(k.trim().toLowerCase()));\nconst hasAllergen = found.length > 0;\nreturn [{ json: { ...$json, allergen_alert: hasAllergen, allergen_text: found.join(', ') } }];\n"
+      },
+      "id": "2529d5c6-d3b4-4eb3-8fcf-4099eda49301",
+      "name": "Allergen Pre-Scan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst { v4: uuidv4 } = require('crypto');\n// Use crypto.randomUUID() which is available in Node 14.17+\nconst key = $json.session && $json.session.idempotency_key\n    ? $json.session.idempotency_key\n    : require('crypto').randomUUID();\nreturn [{ json: { ...$json, idempotency_key: key } }];\n"
+      },
+      "id": "4488f784-cab2-4320-b44f-6d021d4d6396",
+      "name": "Generate Idempotency Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE user_sessions SET idempotency_key = $1 WHERE phone = $2",
+        "options": {
+          "queryReplacement": "={{ $json.idempotency_key }},={{ $json.from }}"
+        }
+      },
+      "id": "daaa21d5-4a4d-4d60-bf26-5e96668778e6",
+      "name": "Store Idempotency Key",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2128,
+        672
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nUPDATE orders\nSET phone = encode(digest(phone, 'sha256'), 'hex')\nWHERE phone = $1;\n\nDELETE FROM user_sessions WHERE phone = $1;\n",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "e0f91500-242e-493f-8e84-077f7ea1c3e9",
+      "name": "Delete User Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        3136,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('Route Action').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"✅ Done. Your phone number and personal data have been securely erased from our system. Historical order records have been anonymised.\\n\\nThank you for using {{ $env.RESTAURANT_NAME }}!\"}}",
+        "options": {}
+      },
+      "id": "70c0d334-3b6f-4663-bf16-92836725d687",
+      "name": "Send Delete Confirm",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3328,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nINSERT INTO message_logs (phone, direction, status, created_at)\nVALUES ($1, 'inbound', 'received', NOW());\n\nSELECT COUNT(*) AS msg_count\nFROM message_logs\nWHERE phone = $1 AND direction = 'inbound' AND created_at > NOW() - INTERVAL '60 seconds';\n",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "83801870-0ceb-405c-aac5-6a2a802c34e9",
+      "name": "Rate Limit Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        192,
+        672
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.msg_count }}",
+              "rightValue": 10,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e967f622-9080-4a39-ac4c-e9c4b851c612",
+      "name": "Rate Limit Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        384,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('Rate Limit Check').item.json.from }}\", \"type\": \"text\", \"text\": {\"body\": \"⏳ You're sending messages too quickly. Please wait a moment and try again.\"}}",
+        "options": {}
+      },
+      "id": "51cf3586-f2d8-43c1-8851-fc0c6833a312",
+      "name": "Send Rate Limit Msg",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        592,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT value AS bot_mode FROM settings WHERE key = 'bot_mode' LIMIT 1",
+        "options": {}
+      },
+      "id": "da02e581-cba0-479c-99dc-3a99687183b0",
+      "name": "Check Bot Mode",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1088,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// menu_code_only mode: bypass Groq, parse structured codes like \"A2 x2, B4\"\nconst text = $json.text || '';\nconst matches = [...text.matchAll(/([A-Z][0-9]+)(?:\\s*x\\s*(\\d+))?/gi)];\nconst parsed_items = matches.map(m => ({ code: m[1].toUpperCase(), quantity: parseInt(m[2]) || 1 }));\n\nif (parsed_items.length === 0) {\n  return [{ json: { ...$json, error: 'NO_ITEMS', error_msg: '🔧 Bot is in code-only mode. Please use codes like A2, B4 x2' } }];\n}\nreturn [{ json: { ...$json, parsed_items } }];\n"
+      },
+      "id": "f8f342fe-20cc-4765-8d83-2005a3e42086",
+      "name": "Menu Code Only Parser",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst data = $input.item.json;\n// Parse UPDATE_ITEM: \"UPDATE_ITEM A2 1\" or Groq action JSON\nconst text = $('Route Action').item.json.text || '';\nconst match = text.match(/(?:UPDATE|CHANGE|SET)\\s+([A-Z][0-9]+)\\s+(?:TO\\s+)?(\\d+)/i)\n    || text.match(/([A-Z][0-9]+)\\s+(?:to|=|x)\\s*(\\d+)/i);\n\nconst code = match ? match[1].toUpperCase() : null;\nconst qty = match ? parseInt(match[2]) : null;\n\nif (!code) return [{ json: { ...$json, error: 'PARSE_ERROR', error_msg: 'Could not understand which item to change. Try: \"Set A2 to 2\"' } }];\nreturn [{ json: { ...$json, update_item_code: code, update_item_qty: qty } }];\n"
+      },
+      "id": "1eddb84b-aa73-4954-b02a-b6e9f4a5cf3a",
+      "name": "Extract Update Item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2528,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nWITH cart AS (\n  SELECT cart FROM user_sessions WHERE phone = $1\n),\nitem_idx AS (\n  SELECT pos - 1 AS idx\n  FROM user_sessions, jsonb_array_elements(cart) WITH ORDINALITY arr(item, pos)\n  WHERE phone = $1 AND item->>'code' = $2\n  LIMIT 1\n)\nUPDATE user_sessions\nSET cart = CASE\n  WHEN (SELECT idx FROM item_idx) IS NULL THEN cart  -- item not in cart, skip\n  WHEN $3::int <= 0 THEN                              -- remove if qty 0 or negative\n    cart - (SELECT idx FROM item_idx)::int\n  ELSE                                                -- update quantity\n    jsonb_set(cart, ARRAY[(SELECT idx FROM item_idx)::text, 'quantity'], to_jsonb($3::int))\nEND\nWHERE phone = $1\nRETURNING cart;",
+        "options": {
+          "queryReplacement": "={{ $json.from }},={{ $json.update_item_code }},={{ $json.update_item_qty }}"
+        }
+      },
+      "id": "ec8898f8-3680-459d-b950-d20a75e6a473",
+      "name": "Update Item DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2736,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\n-- Reload last_order ONLY if all items are still available=true\nWITH last = (SELECT last_order FROM user_sessions WHERE phone = $1),\nunavailable AS (\n  SELECT item->>'name' AS name\n  FROM jsonb_array_elements((SELECT last_order FROM user_sessions WHERE phone=$1)) AS item\n  LEFT JOIN menu_items m ON m.code = item->>'code'\n  WHERE m.available = false OR m.code IS NULL\n)\nUPDATE user_sessions\nSET cart = CASE\n  WHEN (SELECT COUNT(*) FROM unavailable) = 0 THEN last_order\n  ELSE cart  -- don't overwrite if some items are 86'd\nEND\nWHERE phone = $1\nRETURNING cart, (SELECT json_agg(name) FROM unavailable) AS unavailable_items;",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "098e9e8d-7806-468a-8600-b55342817132",
+      "name": "Repeat Last Order",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2736,
+        784
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nBEGIN;\nSELECT order_id, status, confirmed_at\nFROM orders\nWHERE phone = $1\n  AND status IN ('order_received', 'preparing')\nORDER BY created_at DESC\nLIMIT 1\nFOR UPDATE NOWAIT;  -- NOWAIT: fail immediately if someone else has the lock (cook already bumped)\n",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "9af8fa4d-5753-46ee-98fc-fbb26ae2a2f2",
+      "name": "Amendment Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2736,
+        928
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst from = $('Route Action').item.json.from;\nconst data = $input.item.json;\nconst AMENDMENT_MINS = parseInt($env.AMENDMENT_WINDOW_MINS || '2');\n\nif (!data.order_id) {\n  return [{ json: { ...data, error: 'NO_ORDER', error_msg: \"You don't have an active order to edit.\" } }];\n}\n\nif (data.status === 'preparing') {\n  return [{ json: { ...data, error: 'TOO_LATE', error_msg: \"⚠️ Your order is already being prepared. Please speak to our staff for changes.\" } }];\n}\n\nconst confirmedAt = new Date(data.confirmed_at);\nconst nowMs = Date.now();\nconst windowMs = AMENDMENT_MINS * 60 * 1000;\n\nif ((nowMs - confirmedAt.getTime()) > windowMs) {\n  return [{ json: { ...data, error: 'WINDOW_CLOSED', error_msg: `⚠️ Your ${AMENDMENT_MINS}-minute edit window has closed. Please speak to staff.` } }];\n}\n\n// Within window — reload order items into cart and reset order\nreturn [{ json: { ...data, amendment_allowed: true } }];\n"
+      },
+      "id": "8cdd9c52-fdad-47b1-94e2-4ad845a7853a",
+      "name": "Amendment Window Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nBEGIN;\nSELECT pg_advisory_xact_lock(hashtext($1::text));\nUPDATE orders SET status = 'order_received' WHERE order_id = $1;\nUPDATE user_sessions SET cart = (SELECT items FROM orders WHERE order_id = $1) WHERE phone = $2;\nINSERT INTO order_amendments (order_id, before_state, after_state, amended_at)\nVALUES ($1, (SELECT items FROM orders WHERE order_id = $1), NULL, NOW());\nCOMMIT;\nCOMMIT;",
+        "options": {
+          "queryReplacement": "={{ $json.order_id }},={{ $('Route Action').item.json.from }}"
+        }
+      },
+      "id": "58a2c372-1e02-4188-8b0a-aa26c07b11de",
+      "name": "Execute Amendment",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        3136,
+        928
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nSELECT\n  (SELECT COUNT(*) FROM orders WHERE status = 'preparing') AS queue_depth,\n  (SELECT value::int FROM settings WHERE key = 'avg_prep_minutes') AS avg_prep\n",
+        "options": {}
+      },
+      "id": "4540a518-cba7-4085-a665-ce8806733d72",
+      "name": "Get Prep Time",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2928,
+        672
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nSELECT code, type, discount, valid_hours_start, valid_hours_end, valid_days, expiry\nFROM promotions\nWHERE code = UPPER($1)\n  AND active = true\n  AND (expiry IS NULL OR expiry >= CURRENT_DATE)\n  AND (valid_days IS NULL OR TO_CHAR(NOW() AT TIME ZONE $2, 'Dy') = ANY(valid_days))\n  AND (valid_hours_start IS NULL OR\n       (NOW() AT TIME ZONE $2)::TIME BETWEEN valid_hours_start AND valid_hours_end)\nLIMIT 1",
+        "options": {
+          "queryReplacement": "={{ $json.promo_code }},={{ $('Get Restaurant Config').item.json.timezone }}"
+        }
+      },
+      "id": "77fa3679-1364-4cb8-9c20-12d2b1aed09e",
+      "name": "Validate Promo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2736,
+        1072
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst promo = $input.item.json;\nconst session = $('Route Action').item.json.session;\nconst from = $('Route Action').item.json.from;\n\nif (!promo.code) {\n  return [{ json: { error: 'INVALID_PROMO', error_msg: \"❌ That promo code is invalid, expired, or not valid right now.\" } }];\n}\n\nconst subtotal = (session.cart || []).reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);\nconst discount = promo.type === 'percentage'\n  ? Math.round(subtotal * promo.discount / 100)\n  : promo.discount;\n\nreturn [{ json: { promo_applied: promo.code, discount_amount: discount, original_subtotal: subtotal } }];\n"
+      },
+      "id": "34a74aa4-5129-4407-a667-a23e15612950",
+      "name": "Apply Promo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst text = $json.text || '';\nconst match = text.match(/(?:PROMO|DISCOUNT|CODE)\\s*[:\\s]?\\s*([A-Z0-9]+)/i);\nconst code = match ? match[1].toUpperCase() : null;\nif (!code) return [{ json: { ...$json, error: 'NO_CODE', error_msg: 'Please send your promo code like: PROMO SAVE20' } }];\nreturn [{ json: { ...$json, promo_code: code } }];\n"
+      },
+      "id": "cc6fb3ee-7167-4566-9ef1-533eb1cdb50f",
+      "name": "Extract Promo Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2528,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message_type }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6b8a6e86-5c78-4635-b371-8a26647520f1",
+      "name": "Voice Type Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        640,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.media_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9114a103-a5ef-47fe-9b3d-687716e68b3a",
+      "name": "Download Voice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "file",
+              "value": "={{ $json.url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a03bc2c4-0069-4eb6-b7ed-a40fd651234e",
+      "name": "Transcribe Voice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $json.from }}\", \"type\": \"interactive\", \"interactive\": {\"type\": \"button\", \"body\": {\"text\": \"🎙️ Got your voice note!\\n\\nHere's what I heard:\\n\\\"{{ $json.transcript }}\\\"\\n\\nIs this correct?\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"CMD_VOICE_YES\", \"title\": \"✅ Yes, proceed\"}}, {\"type\": \"reply\", \"reply\": {\"id\": \"CMD_VOICE_NO\", \"title\": \"❌ No, retype\"}}]}}}",
+        "options": {}
+      },
+      "id": "7c96a403-92b0-4615-836a-78a7ee1449ee",
+      "name": "Voice Confirm",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1232,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE user_sessions SET last_inbound_at = NOW() WHERE phone = $1",
+        "options": {
+          "queryReplacement": "={{ $json.from }}"
+        }
+      },
+      "id": "85be73d6-bb06-4529-b5d3-3a027c46cdd4",
+      "name": "Update Last Inbound",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        736,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nINSERT INTO message_logs (message_id, phone, direction, channel, created_at)\nVALUES ($1, $2, 'inbound', 'whatsapp', NOW())\nON CONFLICT (message_id) DO NOTHING\nRETURNING id;\n",
+        "options": {
+          "queryParameters": "={{ $json.body.entry[0].changes[0].value.messages[0].id }},{{ $json.body.entry[0].changes[0].value.messages[0].from }}",
+          "queryReplacement": "={{ $json.body.entry[0].changes[0].value.messages[0].id }},={{ $json.body.entry[0].changes[0].value.messages[0].from }}"
+        }
+      },
+      "id": "34b3738e-dfbc-450b-9bed-b71ce3773267",
+      "name": "Message Deduplicate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -80,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8d8c385a-527a-4031-83f5-d15bdcdbd14c",
+      "name": "Dedup Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        128,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "id": "13207c0f-9204-4b87-bfc3-bd6354369d4e",
+      "name": "Early 200 OK (Duplicate)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        336,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT key, value FROM settings;",
+        "options": {}
+      },
+      "id": "012ea7a8-8e99-4b90-b3ea-f22019dc6bd4",
+      "name": "Read Global Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        336,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst settings = {};\nfor (const item of $input.all()) {\n    settings[item.json.key] = item.json.value;\n}\n// Pass settings along with original webhook payload\nconst webhookPayload = $('WhatsApp Webhook').item.json;\nreturn [{ json: { ...webhookPayload, system_settings: settings } }];\n"
+      },
+      "id": "08580870-f746-481a-8327-d38eeea85ddf",
+      "name": "Map Global Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst original_json = $input.item.json;\nconst items_array = original_json.parsed_items || [];\n\n// This is a placeholder for DB check logic inside n8n (since Code node can't easily query DB asynchronously natively without another node, \n// we will trigger a Postgres node next).\nreturn [{ json: { phone: original_json.from, items_to_check: items_array } }];\n"
+      },
+      "id": "9a271f9b-1316-46e3-987d-8ef67b4b9e9a",
+      "name": "Prepare Strict Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nWITH input_items AS (\n  SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(code TEXT, quantity INT)\n)\nSELECT i.code, i.quantity, m.price, m.name, m.available \nFROM input_items i\nLEFT JOIN menu_items m ON i.code = m.item_code;\n",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.items_to_check) }}"
+        }
+      },
+      "id": "00a03074-84bc-4779-af25-3fbb7111876f",
+      "name": "DB Strict Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1936,
+        576
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all().map(i => i.json);\nconst phone = $('Prepare Strict Check').item.json.phone;\n\nconst invalid = items.filter(i => !i.price || i.available === false);\nif (invalid.length > 0) {\n   return [{ json: { phone, success: false, error: 'HALLUCINATION_OR_86', invalid_items: invalid } }];\n}\n\nreturn [{ json: { phone, success: true, validated_cart: items } }];\n"
+      },
+      "id": "ecf97b2e-55ed-4960-9b0c-cd7768cd93e1",
+      "name": "Validate Strict Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "id": "06d3747d-2415-47e4-91d0-2b22071dbae3",
+      "name": "Early 200 OK (Webhook Received)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nSELECT id AS restaurant_id, groq_api_key, bot_mode, timezone, opening_time, closing_time, tax_rate, \n       amendment_window_mins, max_messages_per_minute, valid_table_numbers, allergen_keywords,\n       subscription_status, trial_ends_at\nFROM restaurants \nWHERE whatsapp_phone_number_id = $1;\n        ",
+        "options": {
+          "queryReplacement": "={{ $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.metadata.phone_number_id }}"
+        }
+      },
+      "id": "a48b088f-f0f1-4cee-b6ea-381533327a57",
+      "name": "Get Restaurant Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        32,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rest = $json;\nif (!rest || !rest.restaurant_id) return [{ json: { action: 'HALT', reason: 'unrecognized_phone_id' } }];\n\nlet status = rest.subscription_status;\nif (status === 'trial' && new Date() > new Date(rest.trial_ends_at)) {\n    status = 'suspended';\n}\n\nif (status === 'suspended') {\n    return [{ json: { action: 'SEND_MESSAGE', phone: $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from, message: 'Service is currently unavailable. Please contact the restaurant.' } }];\n}\n\nreturn [{ json: { action: 'PROCESS', ...rest } }];\n"
+      },
+      "id": "92901428-22cb-47a1-ab8f-ae30c11b846f",
+      "name": "Check Restaurant Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"received\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "2032472a-d9fb-4161-9925-952fce1f85e0",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        336,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst msg = $input.first().json.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!msg) return [{ json: { action: 'IGNORE', reason: 'no_message_in_payload' } }];\n\nconst phone = msg.from;\nlet messageText = '';\n\nswitch (msg.type) {\n  case 'text':\n    messageText = msg.text?.body || '';\n    break;\n  case 'interactive':\n    messageText = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || '';\n    break;\n  case 'image':\n  case 'video':\n  case 'document':\n    messageText = msg[msg.type]?.caption || '';\n    if (!messageText) {\n      return [{ json: { action: 'SEND_MESSAGE', phone, message: '📷 I can only process text orders. Please type your order or use item codes.\\nType MENU to see available items.', media_type: msg.type } }];\n    }\n    break;\n  case 'audio':\n    return [{ json: { action: 'SEND_MESSAGE', phone, message: '🎤 Voice messages are not supported yet. Please type your order.\\nType MENU to see available items.' } }];\n  case 'sticker': case 'reaction': case 'location': case 'contacts':\n    return [{ json: { action: 'SEND_MESSAGE', phone, message: 'I can only process text orders. Type your order or use item codes.\\nType MENU for our menu.' } }];\n  default:\n    return [{ json: { action: 'LOG_UNKNOWN', phone, type: msg.type } }];\n}\n\nif (!messageText.trim()) {\n  return [{ json: { action: 'SEND_MESSAGE', phone, message: 'I received your message but couldn\\'t find any text. Please type your order.' } }];\n}\n\nreturn [{ json: { phone, message: messageText.trim(), original_type: msg.type, action: 'PROCESS' } }];\n"
+      },
+      "id": "8cab2486-70e1-4d00-8d02-4adbd4dcea1e",
+      "name": "Extract Message Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.is_open }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4e101232-da66-4902-a2aa-4b18f3a69d42",
+      "name": "Gate Operating Hours",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from }}\", \"type\": \"text\", \"text\": {\"body\": \"We're currently closed. We open at {{ $env.OPENING_TIME }}. You can pre-order when we open.\"}}",
+        "options": {}
+      },
+      "id": "83203d1d-bee2-43bb-aa9e-dabccd533afb",
+      "name": "Message Closed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1136,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT us.consent_given_at FROM (SELECT $1::text AS phone) incoming LEFT JOIN user_sessions us ON us.phone = incoming.phone;",
+        "options": {
+          "queryReplacement": "={{ $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from }}"
+        }
+      },
+      "id": "734965bd-79d1-45ef-a622-47a7782710af",
+      "name": "Check Session Consent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1328,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "gate-consent-present",
+              "leftValue": "={{ $json.consent_given_at }}",
+              "rightValue": "Is not empty",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "280b8301-da06-4bea-9362-71cfe894ffcb",
+      "name": "Gate Consent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env['WHATSAPP_TOKEN'] }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"messaging_product\": \"whatsapp\", \"to\": \"{{ $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from }}\", \"type\": \"interactive\", \"interactive\": {\"type\": \"button\", \"body\": {\"text\": \"To continue, please agree to our Privacy Policy regarding data storage.\"}, \"action\": {\"buttons\": [{\"type\": \"reply\", \"reply\": {\"id\": \"CMD_AGREE_PRIVACY\", \"title\": \"I Agree\"}}]}}}",
+        "options": {}
+      },
+      "id": "a643b38f-2c67-4995-a151-ca279723d0f0",
+      "name": "Request Consent Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1728,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nINSERT INTO user_sessions (phone, consent_given_at, policy_version)\nVALUES ($1, NOW(), '1.0')\nON CONFLICT (phone) DO UPDATE SET consent_given_at = NOW();\n        ",
+        "options": {
+          "queryReplacement": "={{ $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from }}"
+        }
+      },
+      "id": "8234b99e-4902-4fb7-ac69-12e54723248a",
+      "name": "Insert Consent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1536,
+        1024
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst text = $json.text || '';\nconst match = text.match(/table\\s*(\\w+)/i);\nif (match) {\n    const table = match[1].toLowerCase();\n    const validTables = ($env.VALID_TABLE_NUMBERS || '1,2,3,4,5,outside,takeaway').toLowerCase().split(',');\n    if (!validTables.includes(table)) {\n        return [{ json: { ...$json, error: 'INVALID_TABLE', error_msg: `We don't have table ${match[1]}. Valid tables: ${$env.VALID_TABLE_NUMBERS}` } }];\n    }\n}\nreturn [{ json: $json }];\n"
+      },
+      "id": "4b2db7e1-ed6b-4154-9262-5db45077bb7a",
+      "name": "Validate Table Number",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\nSELECT count(*) as req_count \nFROM message_logs \nWHERE phone = $1 \nAND created_at > (NOW() - INTERVAL '60 seconds');\n        ",
+        "options": {
+          "queryReplacement": "={{ $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from }}"
+        }
+      },
+      "id": "ac2e09cf-bb0c-40ad-9436-f2b0e4f2b9c7",
+      "name": "Sliding Window Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1936,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $('WhatsApp Webhook').first().json.rawBody || JSON.stringify($('WhatsApp Webhook').first().json.body || {}) }}",
+        "dataPropertyName": "calculated_hmac",
+        "secret": "={{ $env.WHATSAPP_APP_SECRET }}"
+      },
+      "id": "30face6c-383f-40bb-8b9d-0b5076e574b0",
+      "name": "HMAC Verification",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        2128,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst text = $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].text.body || '';\nif (text.toUpperCase().includes('DELETE MY DATA')) {\n    return [{ json: { is_deletion_request: true, phone: $('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].from } }];\n}\nreturn [{ json: { is_deletion_request: false } }];\n"
+      },
+      "id": "72585f09-530c-4291-994e-7525073047b9",
+      "name": "GDPR Consent Detect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "\n-- Check active orders before deletion\nWITH active AS (\n  SELECT count(*) as c FROM orders WHERE phone = $1 AND status IN ('preparing', 'order_received')\n)\nUPDATE user_sessions \nSET deletion_requested_at = NOW() \nWHERE phone = $1 AND (SELECT c FROM active) = 0;\n        ",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "id": "bcc6da07-2d1b-4cc5-bfd9-937d04365636",
+      "name": "Process GDPR Request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2336,
+        832
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst text = $json.text || '';\nconst keywords = ($env.ALLERGEN_KEYWORDS || 'peanut,gluten,dairy,shellfish').toLowerCase().split(',');\nconst found = keywords.filter(k => text.toLowerCase().includes(k));\nif (found.length > 0) {\n    return [{ json: { ...$json, has_allergen: true, detected_allergens: found.join(', ') } }];\n}\nreturn [{ json: { ...$json, has_allergen: false } }];\n"
+      },
+      "id": "18571044-7599-4d33-8967-b0429f628869",
+      "name": "Allergen Keyword Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2528,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Generate an 8-character display ID — excludes I, O, 0 (ambiguous on kitchen tickets)\nconst alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ123456789';\nlet id = '';\nfor (let i = 0; i < 8; i++) {\n  id += alphabet.charAt(Math.floor(Math.random() * alphabet.length));\n}\nreturn [{ json: { ...$json, display_id: id } }];\n"
+      },
+      "id": "dae3b733-877b-469f-b02a-b2ee7307b97d",
+      "name": "Generate Display ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst intent = $json.intent;\nif (intent === 'REMOVE_ITEM_AMBIGUOUS') {\n  const cart = $('FetchSession').first().json.cart || [];\n  if (cart.length === 0) {\n    return [{ json: { action: 'SEND_MESSAGE', message: 'Your cart is empty. Did you mean to cancel a confirmed order?\\nReply \"YES CANCEL ORDER\" to cancel, or type your order.' } }];\n  }\n  const last = cart[cart.length - 1];\n  return [{ json: {\n    action: 'SEND_INTERACTIVE',\n    type: 'button',\n    body: 'Remove \"' + last.name + '\" from your cart, or cancel the entire order?',\n    buttons: [\n      { id: 'REMOVE_LAST', title: 'Remove ' + last.name.substring(0, 16) },\n      { id: 'CANCEL_ALL',  title: 'Cancel entire order' },\n      { id: 'KEEP_ALL',    title: 'Keep everything' }\n    ]\n  }}];\n}\nreturn [$input.first()];\n"
+      },
+      "id": "b8bfad41-33c8-41dc-a6ef-ad260bd6f75c",
+      "name": "Cancel Disambiguation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst VALIDATION_CALL = {\n  model: 'llama3-8b-8192',\n  messages: [{ role: 'user', content: 'Classify this intent. Reply with EXACTLY one word: ADD_ITEM|CONFIRM_ORDER|CANCEL_ORDER|VIEW_CART|OTHER\\nMessage: \"I want a masala dosa\"' }],\n  max_tokens: 15,\n  temperature: 0\n};\n\ntry {\n  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {\n    method: 'POST',\n    headers: { 'Authorization': 'Bearer ' + $env.GROQ_API_KEY, 'Content-Type': 'application/json' },\n    body: JSON.stringify(VALIDATION_CALL),\n    signal: AbortSignal.timeout(8000)\n  });\n  if (!resp.ok) return [{ json: { action: 'STAY_OPEN', reason: 'http_' + resp.status } }];\n\n  const body = await resp.json();\n  const output = (body.choices?.[0]?.message?.content || '').trim().toUpperCase().replace(/[^A-Z_]/g, '');\n  if (output !== 'ADD_ITEM') {\n    return [{ json: { action: 'STAY_OPEN', reason: 'bad_output', output } }];\n  }\n\n  return [{ json: { action: 'BREAKER_CLOSED', validated_output: output } }];\n} catch(e) {\n  return [{ json: { action: 'STAY_OPEN', reason: 'timeout_or_network', error: e.message } }];\n}\n"
+      },
+      "id": "6a1e6528-720c-4bc0-9795-7f740c706802",
+      "name": "Groq Quality Health Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3136,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT check_global_rate_limit('ai_calls', 100) AS allowed;",
+        "options": {}
+      },
+      "id": "ec804b32-95a9-4ce2-85a8-bcb61fa82ed5",
+      "name": "Global AI Rate Limit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        3328,
+        624
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst error = $json.error || {};\nconst code = error.code;\nconst ACCOUNT_LEVEL_CODES = [130429, 131048, 131056, 131049];\n\nif (ACCOUNT_LEVEL_CODES.includes(code)) {\n  // Account-level throttle — pause ALL outbound sends\n  return [{ json: {\n    action: 'PAUSE_OUTBOUND',\n    error_code: code,\n    message: 'WhatsApp account rate limit hit — pausing outbound messages for 60s',\n    resume_at: new Date(Date.now() + 60000).toISOString()\n  }}];\n}\n\n// Per-customer error — handle individually\nreturn [{ json: { action: 'RETRY_INDIVIDUAL', error_code: code } }];\n"
+      },
+      "id": "3b779d4d-a027-4b20-9b01-dff0e9dc0a8c",
+      "name": "WA Rate Limit Classifier",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3536,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst intent = $json.intent;\nconst items = $json.items || [];\nif (intent === 'ADD_ITEM' && items.length === 0) {\n    return [{ json: { action: 'SEND_MESSAGE', message: 'I couldn\\'t understand the specific items. Please type the exact item name or item code from the menu, or use English.' } }];\n}\nreturn [$input.first()];\n"
+      },
+      "id": "f210b2db-9093-4052-ae34-91f1e0515111",
+      "name": "Check Empty Items Edge Case",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3728,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst breakerOpen = $env.GROQ_CIRCUIT_BREAKER_OPEN === 'true';\nif (breakerOpen) {\n  const cart = $('FetchSession').first().json.cart || [];\n  if (cart.length > 0) {\n    return [{ json: { action: 'SEND_MESSAGE', message: 'Our AI is temporarily down, but you can still check out your current cart!\\nReply \"CHECKOUT\" to finalize your order.' } }];\n  } else {\n    return [{ json: { action: 'SEND_MESSAGE', message: 'We are currently experiencing technical issues and cannot take new orders. Please try again in a few minutes.' } }];\n  }\n}\nreturn [$input.first()];\n"
+      },
+      "id": "94b0a537-5a7c-4bd6-ba5c-ab9eca86d3dd",
+      "name": "Circuit Breaker Cart Override",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3936,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst msg = $input.first().json.message || '';\nif (msg.startsWith('CMD_CONFIRM_')) {\n    const btnPayload = msg.replace('CMD_CONFIRM_', '');\n    const currentIdempotency = $('FetchSession').first().json.idempotency_key;\n    if (btnPayload !== currentIdempotency) {\n        return [{ json: { \n            action: 'CLEAR_STALE_IDEMPOTENCY', \n            phone: $('FetchSession').first().json.phone, \n            message: 'This checkout session has expired. Your cart has been updated or checked out elsewhere.\\nPlease review your cart and check out again.' \n        } }];\n    }\n}\nreturn [$input.first()];\n"
+      },
+      "id": "e5735d76-9fa3-428f-950a-06c719f5c64e",
+      "name": "Expired Button Catch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4128,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE user_sessions SET idempotency_key = NULL, idempotency_expires_at = NULL WHERE phone = $1;",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "id": "79864257-de1b-4bd6-bced-fa9bbaecc55a",
+      "name": "Clear Stale Idempotency",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        4128,
+        832
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "4y2G3E3yQIqQHRow",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst intent = $json.intent;\nif (intent === 'ADD_ITEM') {\n  const items = $json.items || [];\n  // Store db current price at time of add\n  items.forEach(i => i.price_at_time_of_add = i.price);\n  $json.items = items;\n} else if (intent === 'CONFIRM_ORDER') {\n  const cart = $('FetchSession').first().json.cart || [];\n  let priceIncreased = false;\n  let priceDecreased = false;\n  let message = \"\";\n  \n  cart.forEach(item => {\n     // DB current price vs saved snapshot\n     const currentPrice = item.price; // fetched fresh from DB\n     const oldPrice = item.price_at_time_of_add || currentPrice;\n     if (currentPrice > oldPrice) {\n        priceIncreased = true;\n        message += \"Price of \" + item.name + \" changed from ₹\" + oldPrice + \" to ₹\" + currentPrice + \" since you added it. \";\n     } else if (currentPrice < oldPrice) {\n        priceDecreased = true;\n     }\n  });\n\n  if (priceIncreased) {\n     return [{ json: { action: 'SEND_INTERACTIVE', type: 'button', body: message + \"Confirm new total?\", buttons: [{id: 'CONFIRM_NEW_PRICE', title: 'Confirm Order'}, {id: 'CANCEL_ORDER', title: 'Cancel'}] } }];\n  }\n}\nreturn [$input.first()];\n"
+      },
+      "id": "95e1117c-3572-4b35-ba10-eaccc746d6d9",
+      "name": "Verify Price Shifts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4336,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-agree-callback",
+              "leftValue": "={{ ((($('WhatsApp Webhook').item.json.body.entry[0].changes[0].value.messages[0].interactive || {}).button_reply || {}).id || '') }}",
+              "rightValue": "CMD_AGREE_PRIVACY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0d96dd0c-d517-4cd1-b79f-1ae22ea57b35",
+      "name": "Check If Agree Callback",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        528,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "path": "whatsapp-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "d7415b43-80cd-4a12-bd2f-17491d215d9b",
+      "name": "WhatsApp Verification GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        128,
+        224
+      ],
+      "webhookId": "c09e6372-aa2e-4c1e-8d1a-c31201167215"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $input.first().json.query || {};\nconst mode = query['hub.mode'];\nconst token = query['hub.verify_token'];\nconst challenge = query['hub.challenge'];\nconst VERIFY_TOKEN = 'my_secret_token_123';\nif (mode !== 'subscribe' || token !== VERIFY_TOKEN) {\n  throw new Error('Verification failed');\n}\nreturn { challenge };"
+      },
+      "id": "cba41edf-4dd3-4c13-8a40-4b4550c031c8",
+      "name": "Verify Token Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "44bc5eaa-75d8-4ecc-a184-e5f3f1cf51c2",
+      "name": "Respond Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        224
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Message Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Environment": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Input": {
+      "main": [
+        [
+          {
+            "node": "Check Sanitization Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sanitization Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Load Session from DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session from DB": {
+      "main": [
+        [
+          {
+            "node": "Process Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Session": {
+      "main": [
+        [
+          {
+            "node": "Save Session to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Session to DB": {
+      "main": [
+        [
+          {
+            "node": "Check Table Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Table Set": {
+      "main": [
+        [
+          {
+            "node": "Ask Table Number",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Table Number": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Table": {
+      "main": [
+        [
+          {
+            "node": "Check Table Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Table Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Session Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session Table": {
+      "main": [
+        [
+          {
+            "node": "Save Table to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Table to DB": {
+      "main": [
+        [
+          {
+            "node": "Confirm Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Get Menu from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Cart Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Cart Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Menu from DB": {
+      "main": [
+        [
+          {
+            "node": "Format Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Menu": {
+      "main": [
+        [
+          {
+            "node": "Send Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Parse Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup Items in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Items in DB": {
+      "main": [
+        [
+          {
+            "node": "Add to Cart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Cart": {
+      "main": [
+        [
+          {
+            "node": "Check Add Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cart in DB": {
+      "main": [
+        [
+          {
+            "node": "Confirm Items Added",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Cart": {
+      "main": [
+        [
+          {
+            "node": "Check Cart Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cart Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Cart with Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Order": {
+      "main": [
+        [
+          {
+            "node": "Get Prep Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Order Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Order to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Order to DB": {
+      "main": [
+        [
+          {
+            "node": "Clear Cart After Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Cart After Order": {
+      "main": [
+        [
+          {
+            "node": "Send Order Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Global Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq AI Parser": {
+      "main": [
+        [
+          {
+            "node": "Extract Groq Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Groq Output": {
+      "main": [
+        [
+          {
+            "node": "Check Parse Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Menu for AI context": {
+      "main": [
+        [
+          {
+            "node": "Allergen Pre-Scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Add Error": {
+      "main": [
+        [
+          {
+            "node": "Send Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Cart in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync to DB": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cancel Eligibility": {
+      "main": [
+        [
+          {
+            "node": "If Cancel Eligible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Cancel Eligible": {
+      "main": [
+        [
+          {
+            "node": "Execute Cancel in DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Cancel Fail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Cancel in DB": {
+      "main": [
+        [
+          {
+            "node": "Send Cancel Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Cart Review": {
+      "main": [
+        [
+          {
+            "node": "If Empty Cart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Empty Cart": {
+      "main": [
+        [
+          {
+            "node": "Send Empty Cart",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Idempotency Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Clear Cart": {
+      "main": [
+        [
+          {
+            "node": "Send Clear Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Operating Hours": {
+      "main": [
+        [
+          {
+            "node": "Gate Operating Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Kitchen Closed": {
+      "main": [
+        [
+          {
+            "node": "Send Closed Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GDPR Consent Prepare": {
+      "main": [
+        [
+          {
+            "node": "Check Consent DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Consent DB": {
+      "main": [
+        [
+          {
+            "node": "If Needs Consent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Needs Consent": {
+      "main": [
+        [
+          {
+            "node": "Send Consent Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Allergen Pre-Scan": {
+      "main": [
+        [
+          {
+            "node": "Groq AI Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Idempotency Key": {
+      "main": [
+        [
+          {
+            "node": "Store Idempotency Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Idempotency Key": {
+      "main": [
+        [
+          {
+            "node": "Send Cart Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete User Data": {
+      "main": [
+        [
+          {
+            "node": "Send Delete Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Check": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Gate": {
+      "main": [
+        [
+          {
+            "node": "Send Rate Limit Msg",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Operating Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Bot Mode": {
+      "main": [
+        [
+          {
+            "node": "Allergen Pre-Scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Menu Code Only Parser": {
+      "main": [
+        [
+          {
+            "node": "Check Parse Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Update Item": {
+      "main": [
+        [
+          {
+            "node": "Update Item DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Item DB": {
+      "main": [
+        [
+          {
+            "node": "Format Cart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repeat Last Order": {
+      "main": [
+        [
+          {
+            "node": "Format Cart Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Amendment Check": {
+      "main": [
+        [
+          {
+            "node": "Amendment Window Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Amendment Window Logic": {
+      "main": [
+        [
+          {
+            "node": "Execute Amendment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Amendment": {
+      "main": [
+        [
+          {
+            "node": "Format Cart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Prep Time": {
+      "main": [
+        [
+          {
+            "node": "Get Prep Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Promo": {
+      "main": [
+        [
+          {
+            "node": "Apply Promo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Promo": {
+      "main": [
+        [
+          {
+            "node": "Format Cart Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Promo Code": {
+      "main": [
+        [
+          {
+            "node": "Validate Promo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Type Check": {
+      "main": [
+        [
+          {
+            "node": "Download Voice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GDPR Consent Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice": {
+      "main": [
+        [
+          {
+            "node": "Voice Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Deduplicate": {
+      "main": [
+        [
+          {
+            "node": "Dedup Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup Check": {
+      "main": [
+        [
+          {
+            "node": "Check If Agree Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Early 200 OK (Duplicate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Global Settings": {
+      "main": [
+        [
+          {
+            "node": "Map Global Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Global Settings": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HMAC Verification": {
+      "main": [
+        [
+          {
+            "node": "Check Session Consent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Session Consent": {
+      "main": [
+        [
+          {
+            "node": "Gate Consent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate Consent": {
+      "main": [
+        [
+          {
+            "node": "Check Operating Hours",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request Consent Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate Operating Hours": {
+      "main": [
+        [
+          {
+            "node": "Read Global Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message Closed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Agree Callback": {
+      "main": [
+        [
+          {
+            "node": "Insert Consent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HMAC Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Consent": {
+      "main": [
+        [
+          {
+            "node": "HMAC Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Verification GET": {
+      "main": [
+        [
+          {
+            "node": "Verify Token Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Token Match": {
+      "main": [
+        [
+          {
+            "node": "Respond Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "226673ae-48da-42ec-b156-c973ef2b5441"
+}

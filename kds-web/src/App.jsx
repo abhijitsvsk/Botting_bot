@@ -5,6 +5,7 @@ import Manager from './pages/Manager';
 import Staff from './pages/Staff';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
+import Onboarding from './pages/Onboarding';
 import { getUserRole, signOut, hasPermission, onAuthChange } from './auth';
 // lucide-react removed — using Material Symbols exclusively
 
@@ -101,6 +102,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/kitchen" element={<ProtectedRoute requiredRole="kitchen"><Kitchen /></ProtectedRoute>} />
         <Route path="/manager" element={<ProtectedRoute requiredRole="manager"><DashboardLayout><Manager /></DashboardLayout></ProtectedRoute>} />
         <Route path="/staff"   element={<ProtectedRoute requiredRole="cashier"><DashboardLayout><Staff /></DashboardLayout></ProtectedRoute>} />

@@ -1,0 +1,36 @@
+name = "supabase-proxy"
+main = "supabase-proxy.js"
+compatibility_date = "2024-01-01"
+
+# ── Environment Variables ────────────────────────────────────────────────────
+# SUPABASE_REAL_URL is set as a secret (not here) because it is sensitive.
+# Run: wrangler secret put SUPABASE_REAL_URL
+# Then paste your full Supabase URL when prompted, e.g.:
+#   https://abcdefghijklmnop.supabase.co
+#
+# ALLOWED_ORIGIN is also set as a secret after initial testing.
+# Run: wrangler secret put ALLOWED_ORIGIN
+# Then paste your Vercel deployment URL, e.g.:
+#   https://your-restaurant-kds.vercel.app
+#
+# During local development, if neither is set as a secret,
+# the Worker falls back to allowing all origins (*).
+
+[vars]
+# Placeholder — the real value is set via `wrangler secret put SUPABASE_REAL_URL`
+# Do NOT put your actual Supabase URL here — this file is committed to git.
+SUPABASE_REAL_URL = "https://YOUR_PROJECT_ID.supabase.co"
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+# Uncomment and fill in after you have added your domain to Cloudflare.
+# Replace "api.yourdomain.com" with the subdomain you want to use.
+# The /* pattern means every request to that subdomain goes through this Worker.
+#
+# [[routes]]
+# pattern = "api.yourdomain.com/*"
+# zone_name = "yourdomain.com"
+
+# ── Local Development ─────────────────────────────────────────────────────────
+# Run locally with: wrangler dev
+# This starts a local Worker on http://localhost:8787
+# You can test: curl http://localhost:8787/rest/v1/

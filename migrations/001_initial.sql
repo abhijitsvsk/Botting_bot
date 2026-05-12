@@ -189,7 +189,7 @@ INSERT INTO settings (key, value) VALUES
   ('rate_limiting', 'true'),
   ('groq_circuit_breaker_open', 'false'),
   ('groq_failure_count', '0'),
-  ('groq_last_failure_at', NULL);
+  ('groq_last_failure_at', '');
 
 -- Sessions archive (no PK copy, uses its own identity)
 CREATE TABLE sessions_archive (
